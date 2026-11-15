@@ -3,13 +3,13 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Whiteout — Three.js Escape Template</title>
+  <title>Emergency Calls</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { overflow: hidden; background: #cfd8dc; font-family: system-ui, sans-serif; color: #111; }
     canvas { display: block; }
     #hud {
-      position: fixed; top: 20px; left: 20px; right: 20px;
+      position: fixed; top: 86px; left: 20px; right: 20px;
       display: flex; justify-content: space-between; pointer-events: none;
       font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;
     }
@@ -32,6 +32,18 @@
       position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%);
       font-size: 12px; opacity: 0.75; pointer-events: none;
     }
+  
+    body { background:#1d3345; color:#f4f8ff; }
+    #brand {position:fixed;top:20px;left:24px;pointer-events:none;text-shadow:0 2px 12px #132235;}
+    #brand b {font-size:clamp(20px,4vw,30px);letter-spacing:.06em} #brand span {color:#ff5858}
+    #brand small {display:block; font-size:10px;letter-spacing:.24em;margin-top:5px;color:#d4e6f1}
+    .panel {background:rgba(15,32,49,.86);border:1px solid #7694a555;border-radius:12px;box-shadow:0 8px 24px #0c1b2922;font-size:12px;letter-spacing:.04em;}
+    #overlay {background:rgba(12,26,42,.93);padding:24px;} #overlay h1 {font-size:clamp(24px,5vw,48px)}
+    button {background:#df343e;border-radius:10px;box-shadow:0 4px 20px #0003;}
+    #controls-hint {background:#102336ce;padding:10px 16px;border-radius:20px;opacity:1;white-space:nowrap;}
+    #touch {display:none;position:fixed;bottom:25px;left:18px;right:18px;justify-content:space-between;}
+    #touch div {display:flex;gap:10px} #touch button {touch-action:none;width:62px;height:62px;padding:0;background:#142f46d9;border:1px solid #d0e5f666;font-size:14px;user-select:none;}
+    @media(pointer:coarse) {#touch {display:flex} #controls-hint {bottom:100px;font-size:10px} .panel {padding:10px 8px;font-size:10px} #hud {left:12px;right:12px;gap:6px}}
   </style>
   <script type="importmap">
     {
@@ -42,17 +54,19 @@
   </script>
 </head>
 <body>
+  <div id="brand"><b>EMERGENCY <span>CALLS</span></b><small>STORM RESPONSE · UNIT 01</small></div>
   <div id="hud">
     <div class="panel">Impacts: <span id="impacts">0</span> / 5</div>
-    <div class="panel">Collapse Gap: <span id="gap">40</span>m</div>
+    <div class="panel">Storm Gap: <span id="gap">40</span>m</div>
     <div class="panel">Speed: <span id="speed">0</span> km/h</div>
   </div>
 
   <div id="controls-hint">W / ↑ Accelerate · A D / ← → Steer · SPACE Brake</div>
 
+  <div id="touch"><div><button data-key="ArrowLeft">◀</button><button data-key="ArrowRight">▶</button></div><div><button data-key="Space">BRAKE</button><button data-key="ArrowUp">GO</button></div></div>
   <div id="overlay">
-    <h1 id="overlay-title">LOST IN THE WHITEOUT</h1>
-    <p id="overlay-sub">The city swallowed your vehicle.</p>
+    <h1 id="overlay-title">RESPONSE INTERRUPTED</h1>
+    <p id="overlay-sub">Keep your response vehicle ahead of the storm.</p>
     <button id="restart-btn">Try Again</button>
   </div>
 
@@ -60,11 +74,11 @@
     import * as THREE from 'three';
 
     // --- 1. SCENE, FOG & RENDERER ---
-    const FOG_COLOR = 0xd8e0e5;
+    const FOG_COLOR = 0x829aaa;
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(FOG_COLOR);
     // Exponential fog creates the dense "whiteout" visibility wall
-    scene.fog = new THREE.FogExp2(FOG_COLOR, 0.016);
+    scene.fog = new THREE.FogExp2(FOG_COLOR, 0.008);
 
     const camera = new THREE.PerspectiveCamera(65, window.innerWidth / window.innerHeight, 0.1, 250);
     const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -94,43 +108,64 @@
     const hazardMat = new THREE.MeshStandardMaterial({ color: 0x8d3b2e, roughness: 0.7 });
     const snowMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.7 });
 
-    // --- 4. PLAYER CAR ---
+    // Detailed response van; front points toward -Z.
     const car = new THREE.Group();
-    const chassis = new THREE.Mesh(
-      new THREE.BoxGeometry(2.1, 0.85, 4.4),
-      new THREE.MeshStandardMaterial({ color: 0x1e2226, metalness: 0.4, roughness: 0.4 })
-    );
-    chassis.position.y = 0.75;
-    chassis.castShadow = true;
-    car.add(chassis);
-
-    const cabin = new THREE.Mesh(
-      new THREE.BoxGeometry(1.75, 0.65, 2.2),
-      new THREE.MeshStandardMaterial({ color: 0x111315, roughness: 0.2 })
-    );
-    cabin.position.set(0, 1.45, -0.2);
-    car.add(cabin);
-
-    // Tail lights (glow visibly through the whiteout fog)
-    const tailLightGeo = new THREE.BoxGeometry(0.45, 0.18, 0.1);
-    const tailLightMat = new THREE.MeshBasicMaterial({ color: 0xff2a1a });
-    const leftTail = new THREE.Mesh(tailLightGeo, tailLightMat);
-    leftTail.position.set(-0.7, 0.8, 2.21);
-    const rightTail = leftTail.clone();
-    rightTail.position.x = 0.7;
-    car.add(leftTail, rightTail);
+    const red = new THREE.MeshStandardMaterial({color:0xc82432,metalness:.35,roughness:.32});
+    const white = new THREE.MeshStandardMaterial({color:0xe9f0f3,roughness:.5});
+    const dark = new THREE.MeshStandardMaterial({color:0x172634,metalness:.35,roughness:.38});
+    const glass = new THREE.MeshStandardMaterial({color:0x193c55,metalness:.6,roughness:.18});
+    function box(parent,w,h,d,x,y,z,mat) {
+      const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),mat);
+      m.position.set(x,y,z);m.castShadow=true;m.receiveShadow=true;parent.add(m);return m;
+    }
+    box(car,2.25,1.35,4.7,0,1.2,0,red);
+    box(car,2.12,1.05,3.85,0,2.23,.25,red);
+    box(car,2.17,.16,4,0,2.82,.22,white);
+    box(car,1.88,.72,.055,0,2.23,-1.7,glass);
+    box(car,1.88,.57,.055,0,2.24,2.19,glass);
+    box(car,2.28,.23,4.25,0,1.3,.1,white);
+    box(car,2.38,.25,.23,0,.65,2.4,dark);
+    box(car,2.38,.25,.23,0,.65,-2.4,dark);
+    box(car,.045,1.7,.035,0,1.63,2.36,dark);
+    for(const side of [-1,1]) {
+      box(car,.045,.65,1.05,side*1.07,2.23,-.95,glass);
+      box(car,.23,.35,.35,side*1.23,1.96,-1.5,dark);
+      box(car,.25,.62,.06,side*.88,1.04,2.38,new THREE.MeshBasicMaterial({color:0xff302b}));
+      box(car,.55,.25,.06,side*.7,.97,-2.38,new THREE.MeshBasicMaterial({color:0xffedbb}));
+      for(const z of [-1.48,1.48]) {
+        const tire=new THREE.Mesh(new THREE.CylinderGeometry(.5,.5,.32,16),dark);
+        tire.rotation.z=Math.PI/2;tire.position.set(side*1.12,.52,z);car.add(tire);
+        const hub=new THREE.Mesh(new THREE.CylinderGeometry(.26,.26,.335,12),white);
+        hub.rotation.z=Math.PI/2;hub.position.copy(tire.position);car.add(hub);
+      }
+    }
+    const labelCanvas=document.createElement('canvas');labelCanvas.width=512;labelCanvas.height=128;
+    const lc=labelCanvas.getContext('2d');lc.fillStyle='#c82432';lc.fillRect(0,0,512,128);
+    lc.fillStyle='white';lc.textAlign='center';lc.font='bold 45px sans-serif';lc.fillText('EMERGENCY',256,54);
+    lc.font='25px sans-serif';lc.fillText('RESPONSE  •  01',256,98);
+    const label=new THREE.Mesh(new THREE.PlaneGeometry(1.7,.43),new THREE.MeshBasicMaterial({map:new THREE.CanvasTexture(labelCanvas)}));
+    label.position.set(0,1.78,2.382);car.add(label);
+    box(car,1.65,.12,.44,0,2.96,-.3,dark);
+    const beacons=[];
+    for(const side of [-1,1]) {
+      const mat=new THREE.MeshBasicMaterial({color:side<0?0xff243d:0x319cff});
+      beacons.push(box(car,.65,.22,.4,side*.44,3.1,-.3,mat));
+    }
+    const beaconGlow=new THREE.PointLight(0xff2440,8,12,2);beaconGlow.position.set(0,3.4,0);car.add(beaconGlow);
+    const headlights=new THREE.SpotLight(0xffedcc,85,65,.48,.6,1.3);
+    headlights.position.set(0,1,-2);headlights.target.position.set(0,0,-30);car.add(headlights,headlights.target);
     scene.add(car);
 
     // --- 5. PURSUING COLLAPSE WALL ---
     const collapseWall = new THREE.Mesh(
       new THREE.BoxGeometry(80, 40, 10),
-      new THREE.MeshBasicMaterial({ color: 0xbcc7ce, transparent: true, opacity: 0.92 })
+      new THREE.MeshBasicMaterial({ color: 0x627d8c, transparent: true, opacity: 0.65 })
     );
     scene.add(collapseWall);
 
     // --- 6. WORLD CHUNKS (ROAD, COLLAPSING BUILDINGS, DEBRIS) ---
     const chunks = [];
-    const activeHazards = [];
+    
 
     function createChunk(zStart) {
       const group = new THREE.Group();
@@ -141,13 +176,30 @@
       road.rotation.x = -Math.PI / 2;
       road.receiveShadow = true;
       group.add(road);
+      // Center each road tile on its actual scenery span: continuous asphalt.
+      road.position.z=-CHUNK_LENGTH/2;
+      const stripe=new THREE.MeshStandardMaterial({color:0xe9d08c,roughness:.85});
+      const curb=new THREE.MeshStandardMaterial({color:0xb6c0c5});
+      for(const side of [-1,1]) {
+        box(group,1,.25,CHUNK_LENGTH,side*11.5,.08,-30,curb);
+        box(group,.12,.025,CHUNK_LENGTH,side*9.8,.018,-30,white);
+        for(let z=-5;z>-60;z-=10) box(group,.13,.025,4,side*.18,.02,z,stripe);
+        const pole=box(group,.14,8,.14,side*11.8,4,-12,dark);
+        box(group,2,.12,.18,side*10.9,8,-12,dark);
+        box(group,.65,.08,.4,side*10.1,7.9,-12,new THREE.MeshBasicMaterial({color:0xffe3ae}));
+      }
 
       // Flanking buildings that tilt/collapse as the player approaches
       const buildings = [];
       for (let side of [-1, 1]) {
         for (let i = 0; i < 2; i++) {
           const h = 18 + Math.random() * 24;
-          const b = new THREE.Mesh(new THREE.BoxGeometry(10, h, 24), buildingMat);
+          const b = new THREE.Mesh(new THREE.BoxGeometry(10, h, 24), new THREE.MeshStandardMaterial({color:[0x566b7d,0x6c7d89,0x405568,0x78868d][Math.floor(Math.random()*4)],roughness:.85}));
+          const windowMat=new THREE.MeshBasicMaterial({color:Math.random()<.5?0xe5c998:0x96bdcf});
+          for(let y=3;y<h-1;y+=3.5) for(let z=-9;z<=9;z+=4.5)
+            box(b,.06,1.5,1.8,-side*5.04,y-h/2,z,windowMat);
+          box(b,10.4,.28,24.4,0,h/2+.14,0,white);
+          for(let z=-10;z<=10;z+=5) box(b,.15,h,.15,-side*5.08,0,z,dark);
           b.position.set(side * (ROAD_WIDTH / 2 + 6.5), h / 2, -15 - i * 28);
           b.castShadow = true;
           b.userData = {
@@ -169,9 +221,11 @@
         obs.position.set(
           (Math.random() - 0.5) * (ROAD_WIDTH - 4),
           0.75,
-          -10 - Math.random() * (CHUNK_LENGTH - 15)
+          -18 - Math.random() * (CHUNK_LENGTH - 15)
         );
         obs.castShadow = true;
+        for(let x=-w/2+.3;x<w/2;x+=.7) box(obs,.25,.9,.035,x,.05,1.12,white);
+        box(obs,.2,.16,.2,0,.9,0,new THREE.MeshBasicMaterial({color:0xffa22b}));
         obs.userData = { hit: false, halfW: w / 2 };
         group.add(obs);
         obstacles.push(obs);
@@ -211,12 +265,17 @@
 
     // --- 8. GAME STATE & INPUT ---
     const keys = {};
-    window.addEventListener('keydown', e => (keys[e.code] = true));
+    window.addEventListener('keydown', e => {if(['Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.code))e.preventDefault();keys[e.code]=true;});
+    window.addEventListener('blur',()=>{for(const k in keys) keys[k]=false;});
+    document.querySelectorAll('[data-key]').forEach(button=>{
+      button.addEventListener('pointerdown',e=>{e.preventDefault();button.setPointerCapture(e.pointerId);keys[button.dataset.key]=true;});
+      for(const name of ['pointerup','pointercancel','lostpointercapture']) button.addEventListener(name,()=>keys[button.dataset.key]=false);
+    });
     window.addEventListener('keyup', e => (keys[e.code] = false));
 
     let state = {};
     function resetGame() {
-      chunks.forEach(c => scene.remove(c.group));
+      chunks.forEach(c => {scene.remove(c.group);c.group.traverse(o=>{if(o.geometry)o.geometry.dispose();});});
       chunks.length = 0;
       for (let i = 0; i < NUM_CHUNKS; i++) {
         chunks.push(createChunk(-i * CHUNK_LENGTH));
@@ -254,6 +313,11 @@
     function animate() {
       requestAnimationFrame(animate);
       const dt = Math.min(clock.getDelta(), 0.05);
+      const flash=Math.sin(clock.elapsedTime*14)>0;
+      beacons[0].material.color.setHex(flash?0xff3040:0x50121b);
+      beacons[1].material.color.setHex(flash?0x102b48:0x45aaff);
+      beaconGlow.color.setHex(flash?0xff3040:0x45aaff);
+      beaconGlow.intensity=flash?9:6;
 
       if (state.running) {
         // Acceleration & Braking
@@ -283,7 +347,7 @@
         collapseWall.position.set(0, 15, state.collapseZ);
 
         const gap = Math.max(0, Math.round(state.collapseZ - state.carZ));
-        if (gap <= 4) triggerGameOver('Swallowed by the collapsing city.');
+        if (gap <= 4) triggerGameOver('The storm caught your response vehicle.');
 
         // Recycle road chunks & animate collapsing buildings
         chunks.forEach(chunk => {
@@ -322,7 +386,7 @@
         // Update HUD
         document.getElementById('impacts').textContent = state.impacts;
         document.getElementById('gap').textContent = gap;
-        document.getElementById('speed').textContent = Math.round(state.speed * 3.2);
+        document.getElementById('speed').textContent = Math.round(state.speed * 3.6);
       }
 
       // Blizzard snow movement relative to car
@@ -343,8 +407,8 @@
 
       camera.position.set(
         state.carX * 0.75 + (Math.random() - 0.5) * totalShake,
-        3.6 + (Math.random() - 0.5) * totalShake,
-        state.carZ + 8.5
+        5.3 + (Math.random() - 0.5) * totalShake,
+        state.carZ + 11.5
       );
       camera.lookAt(state.carX * 0.5, 1.4, state.carZ - 18);
 
@@ -358,6 +422,7 @@
     });
 
     animate();
+    window.emergencyCalls={scene,car,resetGame,get state(){return state}};
   </script>
 </body>
 </html>
