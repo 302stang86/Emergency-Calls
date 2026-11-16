@@ -10,7 +10,7 @@
     canvas { display: block; }
     #hud {
       position: fixed; top: 86px; left: 20px; right: 20px;
-      display: flex; justify-content: space-between; pointer-events: none;
+      display: flex; justify-content: space-between; gap:8px; flex-wrap:wrap; pointer-events: none;
       font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;
     }
     .panel {
@@ -38,7 +38,7 @@
     #brand b {font-size:clamp(20px,4vw,30px);letter-spacing:.06em} #brand span {color:#ff5858}
     #brand small {display:block; font-size:10px;letter-spacing:.24em;margin-top:5px;color:#d4e6f1}
     .panel {background:rgba(15,32,49,.86);border:1px solid #7694a555;border-radius:12px;box-shadow:0 8px 24px #0c1b2922;font-size:12px;letter-spacing:.04em;}
-    #overlay {background:rgba(12,26,42,.93);padding:24px;} #overlay h1 {font-size:clamp(24px,5vw,48px)}
+    #overlay {background:rgba(12,26,42,.93);padding:24px;} #overlay p {max-width:580px;line-height:1.65;color:#d8e6f1} #overlay h1 {font-size:clamp(24px,5vw,48px)}
     button {background:#df343e;border-radius:10px;box-shadow:0 4px 20px #0003;}
     #controls-hint {background:#102336ce;padding:10px 16px;border-radius:20px;opacity:1;white-space:nowrap;}
     #touch {display:none;position:fixed;bottom:25px;left:18px;right:18px;justify-content:space-between;}
@@ -54,10 +54,11 @@
   </script>
 </head>
 <body>
-  <div id="brand"><b>EMERGENCY <span>CALLS</span></b><small>STORM RESPONSE · UNIT 01</small></div>
+  <div id="brand"><b>EMERGENCY <span>CALLS</span></b><small>FDEC DISPATCH · UNIT 01</small></div>
   <div id="hud">
     <div class="panel">Impacts: <span id="impacts">0</span> / 5</div>
-    <div class="panel">Storm Gap: <span id="gap">40</span>m</div>
+    <div class="panel">Lead on Gallagher: <span id="gap">40</span>m</div>
+    <div class="panel">Job Site: <span id="distance">2,500</span>m</div>
     <div class="panel">Speed: <span id="speed">0</span> km/h</div>
   </div>
 
@@ -67,8 +68,9 @@
   <div id="touch"><div><button data-key="ArrowLeft">◀</button><button data-key="ArrowRight">▶</button></div><div><button data-key="Space">BRAKE</button><button data-key="ArrowUp">GO</button></div></div>
   <div id="overlay">
     <h1 id="overlay-title">RESPONSE INTERRUPTED</h1>
-    <p id="overlay-sub">Keep your response vehicle ahead of the storm.</p>
-    <button id="restart-btn">Try Again</button>
+    <p id="overlay-sub">Reach the job site before Gallagher Fire.</p>
+    <button id="restart-btn">Start Dispatch</button>
+    <button id="menu-btn" style="background:#31485c;display:none">Return to Main Menu</button>
   </div>
 
   <script type="module">
@@ -176,12 +178,12 @@
     headlights.position.set(0,1,-3.2);headlights.target.position.set(0,0,-30);car.add(headlights,headlights.target);
     scene.add(car);
 
-    // --- 5. PURSUING COLLAPSE WALL ---
-    const collapseWall = new THREE.Mesh(
+    // --- 5. TRAILING WEATHER HAZE (visual atmosphere) ---
+    const trailingHaze = new THREE.Mesh(
       new THREE.BoxGeometry(80, 40, 10),
       new THREE.MeshBasicMaterial({ color: 0x627d8c, transparent: true, opacity: 0.65 })
     );
-    scene.add(collapseWall);
+    scene.add(trailingHaze);
 
     // --- 6. WORLD CHUNKS (ROAD, COLLAPSING BUILDINGS, DEBRIS) ---
     const chunks = [];
@@ -193,6 +195,7 @@
       const group = new THREE.Group();
       group.position.z = zStart;
 
+      const poles=[];const signals=[];
       const intersection = Math.abs(Math.round(zStart / CHUNK_LENGTH)) % 3 === 2;
       // Road surface
       const road = new THREE.Mesh(new THREE.PlaneGeometry(ROAD_WIDTH, CHUNK_LENGTH), roadMat);
@@ -218,9 +221,39 @@
           }
         }
         if(!intersection) box(group,.13,.025,60,side*3,.025,-30,stripe);
-        const pole=box(group,.14,8,.14,side*18.8,4,-12,dark);
-        box(group,2,.12,.18,side*17.9,8,-12,dark);
-        box(group,.65,.08,.4,side*17.1,7.9,-12,new THREE.MeshBasicMaterial({color:0xffe3ae}));
+
+      }
+
+      // Three utility poles and luminaires along each non-intersection block.
+      if(!intersection)for(const z of [-5,-25,-45]) {
+        const pole=box(group,.26,10,.26,-18.9,5,z,new THREE.MeshStandardMaterial({color:0x67513f,roughness:.95}));
+        box(group,2.3,.15,.18,-18.9,9.6,z,chrome);
+        box(group,3,.13,.15,-17.5,8.2,z,dark);
+        const lampMat=new THREE.MeshBasicMaterial({color:0xffe3ae});
+        const lamp=box(group,.85,.1,.5,-16.1,8.08,z,lampMat);
+        const transformer=new THREE.Mesh(new THREE.CylinderGeometry(.4,.4,1.15,12),chrome);transformer.position.set(-18.45,8.4,z);group.add(transformer);
+        for(const dx of [-.85,0,.85]) {
+          const points=[];for(let j=0;j<=10;j++){const t=j/10;points.push(new THREE.Vector3(-18.9+dx,9.85-Math.sin(t*Math.PI)*.5,z-20*t));}
+          const cable=new THREE.Line(new THREE.BufferGeometry().setFromPoints(points),new THREE.LineBasicMaterial({color:0x202a31}));group.add(cable);
+          box(group,.13,.3,.13,-18.9+dx,9.85,z,white);
+        }
+        poles.push({z,lamp,transformer,passed:false,mode:null,seed:Math.random()*20});
+      }
+      if(intersection) {
+        for(const dir of [-1,1]) {
+          box(group,.22,8,.22,dir===-1?18:-18,4,-30-dir*13,dark);
+          box(group,33,.18,.18,0,8,-30-dir*13,dark);
+          for(const x of [-12,-6,6,12]) {
+            const housing=new THREE.Group();housing.position.set(x,7.4,-30-dir*13);housing.rotation.y=dir===-1?0:Math.PI;group.add(housing);
+            box(housing,.62,1.8,.4,0,0,0,dark);
+            const lenses=[];
+            for(let i=0;i<3;i++) {const lens=new THREE.Mesh(new THREE.CircleGeometry(.21,16),new THREE.MeshBasicMaterial({color:0x16202a}));lens.position.set(0,.55-i*.55,.215);housing.add(lens);lenses.push(lens);}
+            signals.push({lenses,cross:false});
+          }
+          const crossHead=new THREE.Group();crossHead.position.set(dir*19,5.7,-30+(dir===1?-5:5));crossHead.rotation.y=dir*Math.PI/2;group.add(crossHead);
+          box(crossHead,.6,1.75,.4,0,0,0,dark);const lenses=[];
+          for(let i=0;i<3;i++){const l=new THREE.Mesh(new THREE.CircleGeometry(.2,14),new THREE.MeshBasicMaterial({color:0x16202a}));l.position.set(0,.55-i*.55,.215);crossHead.add(l);lenses.push(l);}signals.push({lenses,cross:true});
+        }
       }
 
       if(!intersection) for(const direction of [-1,1]) {
@@ -323,7 +356,7 @@
         const sign=new THREE.Mesh(new THREE.PlaneGeometry(3,1.5),new THREE.MeshBasicMaterial({map:new THREE.CanvasTexture(signCanvas)}));sign.position.set(16,2.25,-3);workRoot.add(sign);box(workRoot,.12,1.6,.12,16,.8,-3,chrome);
       }
       scene.add(group);
-      const chunk={group,buildings,obstacles,intersection,workZone,damage,workRoot,workLane:6,rubble:[]};
+      const chunk={group,buildings,obstacles,intersection,workZone,damage,workRoot,workLane:6,rubble:[],poles,signals,signalOffset:Math.abs(zStart)*.09,crossTimer:0};
       configureWork(chunk);configureCollapse(chunk,zStart===0||zStart===-60);return chunk;
 
     }
@@ -333,6 +366,7 @@
       configureWork(chunk);
       // Preserve the intersection layout when recycling this tile.
       chunk.group.position.z = newZ;
+      chunk.poles.forEach(p=>{p.passed=false;p.mode=null;p.transformer.material=chrome;});
       chunk.buildings.forEach(b => {
         b.rotation.z = 0;
         b.position.y = b.geometry.parameters.height / 2;
@@ -382,7 +416,7 @@
       c.damageWorld=c.damage.map(d=>({x:c.workLane+(reverse?6-d.x:d.x-6),z:reverse?-60-d.z:d.z,r:d.r}));
     }
     function configureCollapse(c,safe) {
-      c.buildings.forEach(b=>{b.userData.event=null;b.userData.shouldCollapse=false;b.material.emissive.setHex(0);});
+      c.buildings.forEach(b=>{b.visible=true;b.userData.event=null;b.userData.shouldCollapse=false;b.material.emissive.setHex(0);});
       if(safe||c.workZone||!c.buildings.length)return;
       // One visible collapse per eligible city block; opening blocks stay safe.
       const side=collapseSerial++%2===0?1:-1;
@@ -403,10 +437,10 @@
     function updateEffects(dt) {
       for(let i=effects.length-1;i>=0;i--) {
         const e=effects[i];e.age+=dt;e.mesh.position.addScaledVector(e.v,dt);
-        if(e.dust){e.v.multiplyScalar(Math.exp(-dt));e.mesh.scale.multiplyScalar(1+dt*.5);}else if(!e.flash)e.v.y-=14*dt;
+        if(e.dust){e.v.multiplyScalar(Math.exp(-dt));e.mesh.scale.multiplyScalar(1+dt*.5);}else if(!e.flash&&!e.arc)e.v.y-=14*dt;
         if(e.flash)e.mesh.scale.multiplyScalar(1+dt*4);
         e.mesh.material.opacity=(e.dust?.35:1)*Math.max(0,1-e.age/e.life);
-        if(e.age>=e.life){scene.remove(e.mesh);e.mesh.material.dispose();effects.splice(i,1);}
+        if(e.age>=e.life){scene.remove(e.mesh);e.mesh.material.dispose();if(e.arc)e.mesh.geometry.dispose();effects.splice(i,1);}
       }
     }
     function updateBuilding(c,b,dt) {
@@ -428,20 +462,29 @@
         e.burst=true;burst(side*19,12,wz,45);burst(side*19,11,wz,26,true);
         const flash=new THREE.Mesh(new THREE.SphereGeometry(2,12,8),new THREE.MeshBasicMaterial({color:0xffb84b,transparent:true,opacity:1}));flash.position.set(side*19,12,wz);scene.add(flash);
         effects.push({mesh:flash,v:new THREE.Vector3(),age:0,life:.5,dust:false,flash:true});
-        const scar=box(c.group,.08,13,8,side*19.42,9,b.position.z,dark);c.rubble.push(scar);
-        const slab=box(c.group,1.4,14,8,side*19,11,b.position.z,b.material);e.slab=slab;c.rubble.push(slab);
-      }
-      const t=Math.min(1,(e.age-1.25)/1.1);
-      e.slab.position.set(side*(19-5.3*t),11-10*t*t,b.position.z);e.slab.rotation.z=side*t*1.2;
-      if(t===1&&!e.landed) {
-        e.landed=true;burst(side*13,1,wz,18,true);
-        e.slab.userData={hazard:true,halfW:2.5,halfD:4,hit:false};
-        for(let i=0;i<7;i++) {
-          const rock=new THREE.Mesh(new THREE.DodecahedronGeometry(.4+Math.random()*.5,0),b.material);
-          rock.position.set(side*(11.7+Math.random()*3),.3+Math.random()*.3,b.position.z+(Math.random()-.5)*6);rock.scale.y=.6;rock.castShadow=true;
-          rock.userData={hazard:true,halfW:.6,halfD:.7,hit:false};c.group.add(rock);c.rubble.push(rock);
+        // Replace the entire intact building volume with floor and wall fragments.
+        b.visible=false;e.pieces=[];
+        const height=b.geometry.parameters.height;
+        const floors=Math.ceil(height/4);
+        for(let floor=0;floor<floors;floor++)for(let ix=0;ix<3;ix++)for(let iz=0;iz<4;iz++) {
+          const w=10/3,h=height/floors,d=6;
+          const piece=box(c.group,w*.94,h*.9,d*.94,b.position.x+(ix-1)*w,(floor+.5)*h,b.position.z+(iz-1.5)*d,b.material);
+          if(ix===(side===1?0:2))box(piece,.04,h*.38,1.7,-side*w*.48,0,0,new THREE.MeshBasicMaterial({color:0x819ba4}));
+          const targetX=side*Math.max(10.8,Math.abs(piece.position.x)-(3+Math.random()*9));
+          piece.userData={start:piece.position.clone(),target:new THREE.Vector3(targetX,.35+Math.random()*1.1,piece.position.z+(Math.random()-.5)*5),spin:new THREE.Vector3((Math.random()-.5)*1.7,Math.random()*2,(Math.random()-.5)*2),delay:Math.random()*.25,hazard:false,hit:false,halfW:w/2,halfD:d/2};
+          e.pieces.push(piece);c.rubble.push(piece);
         }
       }
+      let allLanded=true;
+      for(const piece of e.pieces||[]) {
+        const d=piece.userData,t=THREE.MathUtils.clamp((e.age-1.25-d.delay)/1.65,0,1);
+        piece.position.lerpVectors(d.start,d.target,t*t);
+        piece.rotation.set(d.spin.x*t,d.spin.y*t,d.spin.z*t);
+        // Concrete floors fracture into a low rubble mound at ground impact.
+        piece.scale.y=1-.7*t;
+        d.hazard=t>.8;allLanded&&=t===1;
+      }
+      if(allLanded&&!e.landed) {e.landed=true;burst(side*15,1,wz,30,true);}
     }
 
     // Pooled traffic: independent world positions, reusable models and collision state.
@@ -530,6 +573,12 @@
               if(conflict){target=v.position.x;speed=0;}
             }
             const old=v.position.x;v.position.x=THREE.MathUtils.damp(old,target,1.8,dt);v.rotation.y=base+dir*(v.position.x-old)/Math.max(dt,.001)*.04;
+            // Ordinary traffic stops before the crosswalk on yellow or red.
+            for(const c of chunks)if(c.intersection) {
+              const stop=c.group.position.z-30-dir*17;
+              const remaining=(stop-v.position.z)*dir;
+              if(remaining>=0&&remaining<35&&signalState(c).main!=='green')speed=Math.min(speed,Math.max(0,remaining*3));
+            }
             const nextZ=v.position.z+dir*speed*dt;
             if(t.plan) {
               const start=t.plan.junction-dir*12;
@@ -547,6 +596,133 @@
           state.impacts++;state.speed*=.55;state.shake=1;
           if(state.impacts>=5)triggerGameOver('Vehicle totaled after 5 impacts.');
         }
+      }
+    }
+
+    // Occasional pooled pursuit: one suspect and up to three marked cruisers.
+    const chasePool=Array.from({length:4},(_,i)=>{
+      const t=makeTraffic(0);t.mesh.visible=false;t.police=i>0;t.mesh.children[0].material=new THREE.MeshStandardMaterial({color:i?0xeff3f5:0x9d2937,metalness:.4,roughness:.35});
+      if(i) {
+        box(t.mesh,2.08,.35,2.4,0,1.08,0,dark);
+        box(t.mesh,1.3,.1,.42,0,2.2,0,dark);
+        t.lights=[box(t.mesh,.5,.18,.35,-.32,2.33,0,new THREE.MeshBasicMaterial({color:0xff2030})),box(t.mesh,.5,.18,.35,.32,2.33,0,new THREE.MeshBasicMaterial({color:0x258cff}))];
+        const cv=document.createElement('canvas');cv.width=256;cv.height=64;const cx=cv.getContext('2d');cx.fillStyle='#14202b';cx.fillRect(0,0,256,64);cx.fillStyle='white';cx.textAlign='center';cx.font='bold 43px sans-serif';cx.fillText('POLICE',128,48);
+        const pm=new THREE.MeshBasicMaterial({map:new THREE.CanvasTexture(cv)});
+        for(const side of [-1,1]) {const sign=new THREE.Mesh(new THREE.PlaneGeometry(1.6,.4),pm);sign.rotation.y=side*Math.PI/2;sign.position.set(side*1.055,1.17,0);t.mesh.add(sign);}
+      }
+      return t;
+    });
+    let chase=null,chaseTimer=14;
+    function resetChase(){chase=null;chaseTimer=14;chasePool.forEach(t=>t.mesh.visible=false);}
+    function updateChase(dt) {
+      if(!chase) {
+        chaseTimer-=dt;if(chaseTimer>0)return;
+        const direction=Math.random()<.5?-1:1,count=1+Math.floor(Math.random()*3);
+        chase={direction,count,age:0,nextWeave:0,lane:direction===-1?6:-6};
+        for(let i=0;i<4;i++) {
+          const t=chasePool[i];t.hit=false;t.mesh.visible=i<=count;t.mesh.rotation.set(0,direction===1?Math.PI:0,0);
+          t.mesh.position.set(chase.lane,0,state.carZ-(direction===-1?100:240)-direction*i*16);
+        }
+      }
+      const q=chase;q.age+=dt;q.nextWeave-=dt;
+      const suspect=chasePool[0];
+      if(q.nextWeave<=0) {q.lane=[-12,-6,0,6,12][Math.floor(Math.random()*5)];q.nextWeave=1.6+Math.random()*1.5;}
+      for(let i=0;i<=q.count;i++) {
+        const t=chasePool[i],v=t.mesh;
+        if(t.hit)continue;
+        const desired=i?chasePool[i-1].mesh.position.x:q.lane;
+        const blockers=[...traffic,...chasePool.filter((o,j)=>j!==i&&j<=q.count)];
+        let best=desired,bestScore=-Infinity;
+        for(const lane of [-12,-6,0,6,12]) {
+          let score=-Math.abs(lane-desired)*.25-Math.abs(lane-v.position.x)*.06;
+          for(const o of blockers) {
+            const dz=(o.mesh.position.z-v.position.z)*q.direction;
+            if(dz>-6&&dz<45&&Math.abs(o.mesh.position.x-lane)<3)score-=70;
+          }
+          for(const c of chunks) {
+            if(c.workZone&&Math.abs(c.workLane-lane)<3&&Math.abs(c.group.position.z-35-v.position.z)<50)score-=70;
+            if(c.rubble.some(r=>r.userData.hazard&&Math.abs(r.position.x-lane)<4&&Math.abs(c.group.position.z+r.position.z-v.position.z)<40))score-=70;
+          }
+          if(score>bestScore){bestScore=score;best=lane;}
+        }
+        const old=v.position.x;v.position.x=THREE.MathUtils.damp(old,best,2.3,dt);
+        v.rotation.y=(q.direction===1?Math.PI:0)+q.direction*(v.position.x-old)/Math.max(.001,dt)*.025;
+        const speed=i?THREE.MathUtils.clamp(((chasePool[i-1].mesh.position.z-v.position.z)*q.direction-16)*1.4+57,38,68):57;
+        v.position.z+=q.direction*speed*dt;
+        if(t.lights){const flash=Math.sin(q.age*20+i)>0;t.lights[0].material.color.setHex(flash?0xff2030:0x401018);t.lights[1].material.color.setHex(flash?0x0e233c:0x258cff);}
+        if(Math.abs(v.position.z-state.carZ)<5.3&&Math.abs(v.position.x-state.carX)<2.25) {
+          t.hit=true;state.speed*=.55;state.impacts++;state.shake=1;
+          if(state.impacts>=5)triggerGameOver('Fire truck disabled by collision damage.');
+        }
+      }
+      if(q.age>16||q.direction===1&&chasePool[q.count].mesh.position.z>state.carZ+50) {
+        chasePool.forEach(t=>t.mesh.visible=false);chase=null;chaseTimer=28+Math.random()*18;
+      }
+    }
+
+    // 68-second coordinated traffic cycle: green, yellow and all-red clearance.
+    let cityTime=0,polesPassed=0,nextElectrical=16+Math.floor(Math.random()*15),outageThrough=0;
+    function signalState(c) {
+      const phase=(cityTime+c.signalOffset)%68;
+      return {main:phase<32?'green':phase<36?'yellow':'red',cross:phase>=38&&phase<62?'green':phase>=62&&phase<66?'yellow':'red'};
+    }
+    const crossPool=Array.from({length:8},()=>{const t=makeTraffic(Math.random()<.5?0:1);t.mesh.visible=false;t.active=false;return t;});
+    function resetUtilities(){cityTime=0;polesPassed=0;nextElectrical=16+Math.floor(Math.random()*15);outageThrough=0;crossPool.forEach(t=>{t.active=false;t.mesh.visible=false;});}
+    function transformerBurst(p,c) {
+      const z=c.group.position.z+p.z;
+      burst(-18.45,8.7,z,35);burst(-18.45,8.7,z,10,true);
+      const mat=new THREE.MeshBasicMaterial({color:0x9ceaff,transparent:true,opacity:1});
+      const flash=new THREE.Mesh(new THREE.SphereGeometry(1.3,10,8),mat);flash.position.set(-18.45,8.7,z);scene.add(flash);
+      effects.push({mesh:flash,v:new THREE.Vector3(),age:0,life:.45,dust:false,flash:true});
+      for(let j=0;j<3;j++) {
+        const pts=[];for(let k=0;k<7;k++)pts.push(new THREE.Vector3(-18.45+(Math.random()-.5)*2,8.7-k*.45,z+(Math.random()-.5)*2));
+        const arc=new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts),new THREE.LineBasicMaterial({color:0x9ceaff,transparent:true,opacity:1}));scene.add(arc);
+        effects.push({mesh:arc,v:new THREE.Vector3(),age:0,life:.3,dust:false,flash:false,arc:true});
+      }
+      p.mode='out';p.transformer.material=dark;
+    }
+    function updateUtilities(dt) {
+      cityTime+=dt;
+      const ordered=chunks.flatMap(c=>c.poles.map(p=>({p,c,z:c.group.position.z+p.z}))).sort((a,b)=>b.z-a.z);
+      for(const {p,c,z} of ordered)if(!p.passed&&state.carZ<=z) {
+        p.passed=true;polesPassed++;
+        if(polesPassed>=nextElectrical) {
+          transformerBurst(p,c);outageThrough=polesPassed+5;nextElectrical=polesPassed+16+Math.floor(Math.random()*15);
+        }
+      }
+      let ahead=0;
+      for(const {p,z} of ordered) {
+        if(!p.passed&&z<state.carZ) {ahead++;if(polesPassed+ahead<=outageThrough&&!p.mode)p.mode=Math.random()<.5?'out':'flicker';}
+        const lit=p.mode!=='out'&&(p.mode!=='flicker'||Math.sin(cityTime*19+p.seed)+Math.sin(cityTime*43+p.seed)>.1);
+        p.lamp.material.color.setHex(lit?0xffe3ae:0x18212b);
+      }
+      for(const c of chunks)if(c.intersection) {
+        const sig=signalState(c);
+        for(const head of c.signals) {
+          const color=head.cross?sig.cross:sig.main;
+          head.lenses.forEach((l,i)=>l.material.color.setHex(color===['red','yellow','green'][i]?[0xff3025,0xffc42e,0x38f07a][i]:0x15202a));
+        }
+        const z=c.group.position.z-30;
+        if(sig.cross==='green'&&Math.abs(z-state.carZ)<200&&(c.crossTimer-=dt)<=0) {
+          for(const direction of [-1,1]) {
+            const t=crossPool.find(t=>!t.active);if(!t)break;
+            t.active=true;t.hit=false;t.direction=direction;t.mesh.visible=true;t.mesh.rotation.set(0,-direction*Math.PI/2,0);
+            t.mesh.position.set(-direction*40,0,z+(direction===1?4:-4));t.speed=12+Math.random()*3;
+          }
+          c.crossTimer=4.5;
+        }
+      }
+      for(const t of crossPool)if(t.active) {
+        const v=t.mesh;
+        if(!t.hit) {
+          const c=chunks.find(c=>c.intersection&&Math.abs(c.group.position.z-30-v.position.z)<8);
+          const distance=-t.direction*v.position.x-20;
+          const hold=c&&signalState(c).cross!=='green'&&distance>=0;
+          const blocked=crossPool.some(o=>o!==t&&o.active&&o.direction===t.direction&&Math.abs(o.mesh.position.z-v.position.z)<2&&(o.mesh.position.x-v.position.x)*t.direction>0&&(o.mesh.position.x-v.position.x)*t.direction<8);
+          if(!blocked)v.position.x+=t.direction*(hold?Math.min(t.speed,Math.max(0,distance*3)):t.speed)*dt;
+          if(Math.abs(v.position.z-state.carZ)<5.5&&Math.abs(v.position.x-state.carX)<2.25){t.hit=true;state.impacts++;state.speed*=.55;state.shake=1;if(state.impacts>=5)triggerGameOver('Fire truck disabled by collision damage.');}
+        }
+        if(Math.abs(v.position.x)>45||v.position.z>state.carZ+55){t.active=false;v.visible=false;}
       }
     }
 
@@ -573,9 +749,11 @@
     });
     window.addEventListener('keyup', e => (keys[e.code] = false));
 
+    const JOB_DISTANCE=2500;
     let state = {};
     function resetGame() {
-      effects.forEach(e=>{scene.remove(e.mesh);e.mesh.material.dispose();});effects.length=0;
+      resetChase();resetUtilities();
+      effects.forEach(e=>{scene.remove(e.mesh);e.mesh.material.dispose();if(e.arc)e.mesh.geometry.dispose();});effects.length=0;
       chunks.forEach(c => {scene.remove(c.group);c.group.traverse(o=>{if(o.geometry)o.geometry.dispose();});});
       chunks.length = 0;
       for (let i = 0; i < NUM_CHUNKS; i++) {
@@ -588,8 +766,8 @@
         steerVel: 0,
         carX: 12,
         carZ: 0,
-        collapseZ: 45,
-        collapseSpeed: 31, // Constantly chases the player
+        rivalZ: 45,
+        rivalSpeed: 31, // Gallagher Fire closes the distance at the existing chase rate
         impacts: 0,
         shake: 0
       };
@@ -597,17 +775,38 @@
       traffic.forEach((t,i)=>{t.lastJunction=null;placeTraffic(t,i,true);});
       car.position.set(12, 0, 0);
       car.rotation.set(0, 0, 0);
+      for(const key in keys)keys[key]=false;
+      document.getElementById('impacts').textContent='0';
+      document.getElementById('gap').textContent='45';
+      document.getElementById('distance').textContent=JOB_DISTANCE.toLocaleString();
       document.getElementById('overlay').classList.remove('active');
     }
 
-    document.getElementById('restart-btn').addEventListener('click', resetGame);
-    resetGame();
-
-    function triggerGameOver(reason) {
-      state.running = false;
-      document.getElementById('overlay-sub').textContent = reason;
+    function showMainMenu() {
+      state.running=false;
+      for(const key in keys)keys[key]=false;
+      document.getElementById('overlay-title').textContent='EMERGENCY CALLS';
+      document.getElementById('overlay-sub').textContent='FDEC dispatch: a job is 2.5 km ahead. Beat Gallagher Fire to the site. Keep your lead and avoid five impacts. Snow, traffic and city hazards will slow your response.';
+      document.getElementById('restart-btn').textContent='Start Dispatch';
+      document.getElementById('menu-btn').style.display='none';
       document.getElementById('overlay').classList.add('active');
     }
+    function showResult(title,message,won=false) {
+      state.running=false;
+      document.getElementById('overlay-title').textContent=title;
+      document.getElementById('overlay-sub').textContent=message;
+      document.getElementById('restart-btn').textContent=won?'Run Again':'Try Again';
+      document.getElementById('menu-btn').style.display='block';
+      document.getElementById('overlay').classList.add('active');
+    }
+    function triggerGameOver(reason) {
+      if(!state.running)return;
+      const rivalWon=state.rivalZ-state.carZ<=4;
+      showResult(rivalWon?'GALLAGHER FIRE GOT THE JOB':'RESPONSE STOPPED',reason);
+    }
+    document.getElementById('restart-btn').addEventListener('click',resetGame);
+    document.getElementById('menu-btn').addEventListener('click',showMainMenu);
+    resetGame();showMainMenu();
 
     // --- 9. MAIN LOOP ---
     const clock = new THREE.Clock();
@@ -643,13 +842,13 @@
         car.rotation.y = -state.steerVel * 0.025;
         car.rotation.z = -state.steerVel * 0.015; // Body roll
 
-        // Advance pursuing collapse front (gradually speeds up)
-        state.collapseSpeed = Math.min(44, state.collapseSpeed + 0.35 * dt);
-        state.collapseZ -= state.collapseSpeed * dt;
-        collapseWall.position.set(0, 15, state.collapseZ);
+        // Advance Gallagher Fire along the same route (original pursuit mechanics).
+        state.rivalSpeed = Math.min(44, state.rivalSpeed + 0.35 * dt);
+        state.rivalZ -= state.rivalSpeed * dt;
+        trailingHaze.position.set(0, 15, state.rivalZ);
 
-        const gap = Math.max(0, Math.round(state.collapseZ - state.carZ));
-        if (gap <= 4) triggerGameOver('The storm caught your response vehicle.');
+        const gap = Math.max(0, Math.round(state.rivalZ - state.carZ));
+        if (gap <= 4) triggerGameOver('Gallagher Fire overtook you and claimed the job. Get there first on your next dispatch.');
 
         // Recycle road chunks & animate collapsing buildings
         chunks.forEach(chunk => {
@@ -671,7 +870,7 @@
 
           // Obstacle AABB collision check
           chunk.obstacles.forEach(obs => {
-            if (obs.userData.hit) return;
+            if (!state.running || obs.userData.hit) return;
             const conePos=obs.getWorldPosition(new THREE.Vector3());
             const worldZ = conePos.z;
             if (Math.abs(worldZ - state.carZ) < 3.45 && Math.abs(conePos.x - state.carX) < obs.userData.halfW + 1.25) {
@@ -685,7 +884,7 @@
           });
         });
 
-        if(state.running) updateTraffic(dt);
+        if(state.running) {updateUtilities(dt);updateTraffic(dt);updateChase(dt);}
         // Rough pavement causes continuous drag; potholes add a stronger slowdown.
         // Road damage does not count as a vehicle impact.
         let roughRoad=false, pothole=false;
@@ -707,6 +906,9 @@
         document.getElementById('impacts').textContent = state.impacts;
         document.getElementById('gap').textContent = gap;
         document.getElementById('speed').textContent = Math.round(state.speed * 3.6);
+        const remaining=Math.max(0,Math.ceil(JOB_DISTANCE+state.carZ));
+        document.getElementById('distance').textContent=remaining.toLocaleString();
+        if(state.running&&remaining===0)showResult('FDEC GOT THE JOB!','You reached the job site before Gallagher Fire. Dispatch complete.',true);
       }
 
       updateEffects(dt);
@@ -724,7 +926,7 @@
 
       // Chase camera + impact/proximity shake
       state.shake = Math.max(0, state.shake - dt * 2.5);
-      const proximityShake = Math.max(0, (25 - (state.collapseZ - state.carZ)) / 25) * 0.25;
+      const proximityShake = Math.max(0, (25 - (state.rivalZ - state.carZ)) / 25) * 0.25;
       const totalShake = state.shake * 0.6 + proximityShake;
 
       camera.position.set(
