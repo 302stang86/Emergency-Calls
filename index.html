@@ -79,9 +79,9 @@
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(FOG_COLOR);
     // Exponential fog creates the dense "whiteout" visibility wall
-    scene.fog = new THREE.FogExp2(FOG_COLOR, 0.008);
+    scene.fog = new THREE.FogExp2(FOG_COLOR, 0.0055);
 
-    const camera = new THREE.PerspectiveCamera(65, window.innerWidth / window.innerHeight, 0.1, 250);
+    const camera = new THREE.PerspectiveCamera(65, window.innerWidth / window.innerHeight, 0.1, 360);
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -185,6 +185,8 @@
 
     // --- 6. WORLD CHUNKS (ROAD, COLLAPSING BUILDINGS, DEBRIS) ---
     const chunks = [];
+    let frontageSerial=0;
+    let collapseSerial=0;
     
 
     function createChunk(zStart) {
@@ -232,6 +234,11 @@
       for (let side of [-1, 1]) {
         for (let i = 0; i < 2; i++) {
           if(intersection) continue;
+          const frontage=frontageSerial++;
+          if(frontage%7===6) {
+            makeSpecialLot(group,side,-15-i*28,Math.floor(frontage/7)%4);
+            continue;
+          }
           const h = 18 + Math.random() * 24;
           const b = new THREE.Mesh(new THREE.BoxGeometry(10, h, 24), new THREE.MeshStandardMaterial({color:[0x566b7d,0x6c7d89,0x405568,0x78868d][Math.floor(Math.random()*4)],roughness:.85}));
           const windowMat=new THREE.MeshBasicMaterial({color:Math.random()<.5?0xe5c998:0x96bdcf});
@@ -251,6 +258,17 @@
         }
       }
 
+      // Second city row fills sightlines through intersections and frontage gaps.
+      for(const side of [-1,1]) for(let row=0;row<2;row++)for(let j=0;j<3;j++) {
+        const z=-10-j*23;
+        if(intersection&&Math.abs(z+30)<13)continue; // Preserve cross-street corridors.
+        const height=24+Math.random()*34;
+        const distant=new THREE.MeshStandardMaterial({color:[0x536673,0x687783,0x435b6c][(j+row)%3],roughness:.9});
+        const tower=box(group,15,height,19,side*(46+row*22),height/2,z,distant);
+        const wm=new THREE.MeshBasicMaterial({color:row?0x90a9b6:0xa8bfc7});
+        for(let y=4;y<height-1;y+=5)for(let dz=-6;dz<=6;dz+=6)box(tower,.05,1.6,1.7,-side*7.53,y-height/2,dz,wm);
+      }
+      for(const side of [-1,1])box(group,70,.12,60,side*53,-.12,-30,new THREE.MeshStandardMaterial({color:0x718089,roughness:1}));
       // Standard orange road cones with reflective white bands
       const obstacles = [];
       const workRoot=new THREE.Group();group.add(workRoot);
@@ -329,6 +347,33 @@
       configureCollapse(chunk,false);
     }
 
+    function makeSpecialLot(group,side,z,type) {
+      const lot=new THREE.Group();lot.position.set(side*25,0,z);group.add(lot);
+      const groundMat=new THREE.MeshStandardMaterial({color:type===1?0x536d52:0x737775,roughness:1});
+      box(lot,12,.12,23,0,.04,0,groundMat);
+      if(type===0) { // Vacant lot with low perimeter fence.
+        for(let dz=-10;dz<=10;dz+=2)box(lot,.12,1.5,.12,-side*5, .75,dz,chrome);
+        box(lot,.08,.08,22,-side*5,1.2,0,chrome);
+      } else if(type===1) {
+        const leaf=new THREE.MeshStandardMaterial({color:0x315442,roughness:1});
+        for(const dz of [-7,0,7]) {
+          box(lot,.35,3,.35,side*1,1.5,dz,dark);
+          const tree=new THREE.Mesh(new THREE.ConeGeometry(2.4,5,9),leaf);tree.position.set(side*1,4,dz);lot.add(tree);
+        }
+        box(lot,1.2,.12,20,-side*3,.15,0,white);
+        for(const dz of [-5,5]) {box(lot,1.5,.15,2,-side*1,.7,dz,chrome);box(lot,.15,.7,2,-side*.35,1,dz,chrome);}
+      } else if(type===2) {
+        for(let i=0;i<18;i++) {
+          const debris=new THREE.Mesh(new THREE.DodecahedronGeometry(.6+Math.random()*1.3),new THREE.MeshStandardMaterial({color:0x666b6c,roughness:1}));
+          debris.position.set((Math.random()-.5)*9,.5+Math.random(),(Math.random()-.5)*19);debris.scale.y=.6;lot.add(debris);
+        }
+        box(lot,1,4,8,side*4,2,0,buildingMat);box(lot,8,2,1,0,1,-9,buildingMat);
+      } else {
+        box(lot,9,.5,16,0,4.8,0,white);box(lot,9,.3,16,0,4.55,0,red);
+        for(const dz of [-5,5]) {box(lot,.2,4.5,.2,0,2.25,dz,chrome);box(lot,1.1,1.7,.8,-side*1,1,dz,red);box(lot,.8,.5,.83,-side*1,1.6,dz,dark);}
+        box(lot,8,3.5,4,side*1,1.75,-9,white);box(lot,5,1.5,.05,side*1,2,-6.96,glass);
+      }
+    }
     function configureWork(c) {
       c.workLane=[-12,-6,0,6,12][Math.floor(Math.random()*5)];
       const reverse=c.workLane<0;
@@ -338,8 +383,11 @@
     }
     function configureCollapse(c,safe) {
       c.buildings.forEach(b=>{b.userData.event=null;b.userData.shouldCollapse=false;b.material.emissive.setHex(0);});
-      if(safe||c.workZone||!c.buildings.length||Math.random()>.38)return;
-      const b=c.buildings[Math.floor(Math.random()*c.buildings.length)];
+      if(safe||c.workZone||!c.buildings.length)return;
+      // One visible collapse per eligible city block; opening blocks stay safe.
+      const side=collapseSerial++%2===0?1:-1;
+      const options=c.buildings.filter(b=>b.userData.side===side);
+      const b=(options.length?options:c.buildings)[0];
       b.userData.event={age:0,started:false,burst:false,landed:false,slab:null};
     }
     const effects=[];
@@ -355,7 +403,8 @@
     function updateEffects(dt) {
       for(let i=effects.length-1;i>=0;i--) {
         const e=effects[i];e.age+=dt;e.mesh.position.addScaledVector(e.v,dt);
-        if(e.dust){e.v.multiplyScalar(Math.exp(-dt));e.mesh.scale.multiplyScalar(1+dt*.5);}else e.v.y-=14*dt;
+        if(e.dust){e.v.multiplyScalar(Math.exp(-dt));e.mesh.scale.multiplyScalar(1+dt*.5);}else if(!e.flash)e.v.y-=14*dt;
+        if(e.flash)e.mesh.scale.multiplyScalar(1+dt*4);
         e.mesh.material.opacity=(e.dust?.35:1)*Math.max(0,1-e.age/e.life);
         if(e.age>=e.life){scene.remove(e.mesh);e.mesh.material.dispose();effects.splice(i,1);}
       }
@@ -363,12 +412,12 @@
     function updateBuilding(c,b,dt) {
       const e=b.userData.event;if(!e)return;
       const wz=c.group.position.z+b.position.z;
-      if(!e.started&&wz-state.carZ<-145)return;
+      if(!e.started&&wz-state.carZ<-205)return;
       if(wz>state.carZ+30&&!e.started)return;
       e.started=true;e.age+=dt;
       const side=b.userData.side;
       // Warning tremor and falling chips before the facade breaks away.
-      if(e.age<2.5) {
+      if(e.age<1.25) {
         b.rotation.z=Math.sin(e.age*35)*.003;
         b.material.emissive.setHex(Math.sin(e.age*22)>0?0x231709:0);
         if(Math.random()<dt*9)burst(side*19.3,8,wz,2);
@@ -376,14 +425,17 @@
       }
       b.rotation.z=0;b.material.emissive.setHex(0);
       if(!e.burst) {
-        e.burst=true;burst(side*19,10,wz,26);burst(side*19,8,wz,16,true);
-        const slab=box(c.group,1.1,9,5,side*19,7,b.position.z,b.material);e.slab=slab;c.rubble.push(slab);
+        e.burst=true;burst(side*19,12,wz,45);burst(side*19,11,wz,26,true);
+        const flash=new THREE.Mesh(new THREE.SphereGeometry(2,12,8),new THREE.MeshBasicMaterial({color:0xffb84b,transparent:true,opacity:1}));flash.position.set(side*19,12,wz);scene.add(flash);
+        effects.push({mesh:flash,v:new THREE.Vector3(),age:0,life:.5,dust:false,flash:true});
+        const scar=box(c.group,.08,13,8,side*19.42,9,b.position.z,dark);c.rubble.push(scar);
+        const slab=box(c.group,1.4,14,8,side*19,11,b.position.z,b.material);e.slab=slab;c.rubble.push(slab);
       }
-      const t=Math.min(1,(e.age-2.5)/1.5);
-      e.slab.position.set(side*(19-5.3*t),7-6*t*t,b.position.z);e.slab.rotation.z=side*t*1.2;
+      const t=Math.min(1,(e.age-1.25)/1.1);
+      e.slab.position.set(side*(19-5.3*t),11-10*t*t,b.position.z);e.slab.rotation.z=side*t*1.2;
       if(t===1&&!e.landed) {
         e.landed=true;burst(side*13,1,wz,18,true);
-        e.slab.userData={hazard:true,halfW:2,halfD:3,hit:false};
+        e.slab.userData={hazard:true,halfW:2.5,halfD:4,hit:false};
         for(let i=0;i<7;i++) {
           const rock=new THREE.Mesh(new THREE.DodecahedronGeometry(.4+Math.random()*.5,0),b.material);
           rock.position.set(side*(11.7+Math.random()*3),.3+Math.random()*.3,b.position.z+(Math.random()-.5)*6);rock.scale.y=.6;rock.castShadow=true;
