@@ -100,7 +100,7 @@
     scene.add(dirLight);
 
     // --- 3. SHARED MATERIALS & CONSTANTS ---
-    const ROAD_WIDTH = 22;
+    const ROAD_WIDTH = 36;
     const CHUNK_LENGTH = 60;
     const NUM_CHUNKS = 6;
 
@@ -203,17 +203,30 @@
       const curb=new THREE.MeshStandardMaterial({color:0xb6c0c5});
       if(intersection) {
         const cross=new THREE.Mesh(new THREE.PlaneGeometry(90,18),roadMat);cross.rotation.x=-Math.PI/2;cross.position.set(0,.012,-30);cross.receiveShadow=true;group.add(cross);
-        for(const side of [-1,1]) for(let x=-8;x<=8;x+=2.5) box(group,1.3,.025,2.5,x,.04,-30+side*12,white);
+        for(const side of [-1,1]) for(let x=-14;x<=14;x+=2.5) box(group,1.3,.025,2.5,x,.04,-30+side*12,white);
       }
       for(const side of [-1,1]) {
-        if(!intersection) box(group,1,.25,CHUNK_LENGTH,side*11.5,.08,-30,curb);
-        if(!intersection) box(group,.12,.025,CHUNK_LENGTH,side*9.8,.018,-30,white);
-        for(let z=-5;z>-60;z-=10) box(group,.13,.025,4,side*.18,.02,z,stripe);
-        const pole=box(group,.14,8,.14,side*11.8,4,-12,dark);
-        box(group,2,.12,.18,side*10.9,8,-12,dark);
-        box(group,.65,.08,.4,side*10.1,7.9,-12,new THREE.MeshBasicMaterial({color:0xffe3ae}));
+        if(!intersection) box(group,1,.25,CHUNK_LENGTH,side*18.5,.08,-30,curb);
+        if(!intersection) box(group,.12,.025,CHUNK_LENGTH,side*15,.018,-30,white);
+        // Shared center lane bounded by solid/dashed yellow; white divides through lanes.
+        for(let z=-5;z>-60;z-=10) {
+          if(!intersection || Math.abs(z+30)>11) {
+            box(group,.12,.025,4,side*9,.025,z,white);
+            box(group,.12,.025,4,side*2.75,.025,z,stripe);
+          }
+        }
+        if(!intersection) box(group,.13,.025,60,side*3,.025,-30,stripe);
+        const pole=box(group,.14,8,.14,side*18.8,4,-12,dark);
+        box(group,2,.12,.18,side*17.9,8,-12,dark);
+        box(group,.65,.08,.4,side*17.1,7.9,-12,new THREE.MeshBasicMaterial({color:0xffe3ae}));
       }
 
+      if(!intersection) for(const direction of [-1,1]) {
+        const arrow=new THREE.Group();arrow.position.set(0,.045,direction===-1?-18:-44);arrow.rotation.y=direction===-1?0:Math.PI;
+        box(arrow,.16,.02,2.4,0,0,0,stripe);box(arrow,1.2,.02,.16,-.55,0,-1.2,stripe);
+        const tip=box(arrow,.65,.02,.16,-.9,0,-1.02,stripe);tip.rotation.y=-.65;
+        const tip2=box(arrow,.65,.02,.16,-.9,0,-1.38,stripe);tip2.rotation.y=.65;group.add(arrow);
+      }
       // Flanking buildings that tilt/collapse as the player approaches
       const buildings = [];
       for (let side of [-1, 1]) {
@@ -240,13 +253,13 @@
 
       // Standard orange road cones with reflective white bands
       const obstacles = [];
-      const workZone = !intersection && Math.abs(Math.round(zStart/CHUNK_LENGTH))%3===1;
+      const workZone = !intersection && Math.abs(Math.round(zStart/CHUNK_LENGTH))%6===4;
       // Approach from local Z=0: taper from the left shoulder to the center line,
       // then a straight cone line protects the damaged left lane.
       const coneLayout=workZone?[
-        [-9,-8],[-7.2,-12],[-5.4,-16],[-3.6,-20],[-1.8,-24],
-        [-.6,-28],[-.6,-34],[-.6,-40],[-.6,-46],[-.6,-52],
-        [-3,-55],[-6,-55],[-9,-55]
+        [-6.8,-8],[-5.6,-12],[-4.4,-16],[-3.2,-20],[-2,-24],
+        [-1,-28],[-1,-34],[-1,-40],[-1,-46],[-1,-52],
+        [-2,-55],[-4.4,-55],[-6.8,-55]
       ]:[];
       const count = coneLayout.length;
       for (let i = 0; i < count; i++) {
@@ -261,7 +274,7 @@
           const piece=new THREE.Mesh(new THREE.CylinderGeometry(radius(top),radius(bottom),top-bottom,32),mat);
           piece.position.y=(bottom+top)/2;piece.castShadow=true;piece.receiveShadow=true;obs.add(piece);
         }
-        obs.position.set(coneLayout[i][0],0,coneLayout[i][1]);
+        obs.position.set(coneLayout[i][0]+10,0,coneLayout[i][1]);
         obs.userData = { hit: false, halfW: .45 };
         group.add(obs);
         obstacles.push(obs);
@@ -272,9 +285,9 @@
         const gravel=new THREE.MeshStandardMaterial({color:0x776b5b,roughness:1});
         const pitMat=new THREE.MeshStandardMaterial({color:0x161d23,roughness:1});
         const rough=new THREE.MeshStandardMaterial({color:0x48443d,roughness:1});
-        box(group,7.2,.035,24,-5.3,.025,-40,gravel);
+        box(group,5.2,.035,24,5.5,.025,-40,gravel);
         // Jagged dark potholes, broken asphalt edges, and scattered gravel.
-        for(const [x,z,r] of [[-6.8,-33,1.05],[-3.3,-39,1.2],[-7,-46,1.25],[-4.3,-49,.85]]) {
+        for(const [x,z,r] of [[4.2,-33,1.05],[6.6,-39,1.2],[4,-46,1.25],[6,-49,.85]]) {
           const pit=new THREE.Mesh(new THREE.CylinderGeometry(r,r,.045,9),pitMat);pit.position.set(x,.065,z);group.add(pit);
           damage.push({x,z,r});
           for(let j=0;j<8;j++) {
@@ -284,11 +297,11 @@
           }
         }
         for(let i=0;i<38;i++) {
-          const chip=box(group,.08+Math.random()*.17,.035,.1+Math.random()*.2,-8.7+Math.random()*6.7,.065,-29-Math.random()*22,rough);chip.rotation.y=Math.random()*Math.PI;
+          const chip=box(group,.08+Math.random()*.17,.035,.1+Math.random()*.2,3.2+Math.random()*4.7,.065,-29-Math.random()*22,rough);chip.rotation.y=Math.random()*Math.PI;
         }
         const signCanvas=document.createElement('canvas');signCanvas.width=512;signCanvas.height=256;
         const sc=signCanvas.getContext('2d');sc.fillStyle='#ff8a23';sc.fillRect(0,0,512,256);sc.strokeStyle='#20242a';sc.lineWidth=14;sc.strokeRect(10,10,492,236);sc.fillStyle='#172330';sc.textAlign='center';sc.font='bold 54px sans-serif';sc.fillText('LEFT LANE',256,85);sc.fillText('CLOSED',256,150);sc.font='bold 42px sans-serif';sc.fillText('MERGE RIGHT →',256,215);
-        const sign=new THREE.Mesh(new THREE.PlaneGeometry(3,1.5),new THREE.MeshBasicMaterial({map:new THREE.CanvasTexture(signCanvas)}));sign.position.set(-9,2.25,-3);group.add(sign);box(group,.12,1.6,.12,-9,.8,-3,chrome);
+        const sign=new THREE.Mesh(new THREE.PlaneGeometry(3,1.5),new THREE.MeshBasicMaterial({map:new THREE.CanvasTexture(signCanvas)}));sign.position.set(16,2.25,-3);group.add(sign);box(group,.12,1.6,.12,16,.8,-3,chrome);
       }
       scene.add(group);
       return { group, buildings, obstacles, intersection, workZone, damage };
@@ -335,61 +348,77 @@
       }
       scene.add(v);return {mesh:v,length,parked:false,hit:false,push:0,laneTimer:0,turn:null,turnDone:false};
     }
-    for(let i=0;i<18;i++)traffic.push(makeTraffic(i%4));
+    for(let i=0;i<6;i++)traffic.push(makeTraffic(i%4));
     function placeTraffic(t,index,initial=false) {
-      t.parked=index%3===0;t.side=Math.random()<.5?-1:1;t.hit=false;t.push=0;t.turn=null;t.turnDone=false;
-      t.mesh.rotation.set(0,0,0);t.mesh.visible=true;
-      t.mesh.position.set(t.parked?t.side*8.8:(Math.random()<.5?-3.7:3.7),0,initial?-45-index*17:state.carZ-220-Math.random()*100);
-      for(const c of chunks) if(c.workZone&&t.mesh.position.x<0) {
-        const local=t.mesh.position.z-c.group.position.z;
-        if(local<0&&local>-60)t.mesh.position.x=t.parked?8.8:3.7;
-      }
-      if(t.parked)t.side=Math.sign(t.mesh.position.x);
-      t.lastJunction=null;t.targetX=t.mesh.position.x;t.speed=9+Math.random()*5;t.laneTimer=3+Math.random()*5;
-      // Keep parked vehicles out of cross streets.
-      if(t.parked) for(const c of chunks)if(c.intersection&&Math.abs(t.mesh.position.z-(c.group.position.z-30))<18)t.mesh.position.z-=28;
+      t.parked=index%3===0;t.side=Math.random()<.5?-1:1;
+      t.direction=index%2===0?-1:1; // -Z outbound, +Z oncoming.
+      t.hit=false;t.push=0;t.turn=null;t.turnDone=false;t.plan=null;t.lastJunction=null;
+      const side=t.direction===-1?1:-1;
+      const x=t.parked?t.side*16.5:side*(Math.random()<.5?6:12);
+      t.mesh.rotation.set(0,t.direction===1?Math.PI:0,0);t.mesh.visible=true;
+      const z=initial?-140-index*75:Math.min(state.carZ-300,...traffic.filter(o=>o!==t).map(o=>o.mesh.position.z))-65-Math.random()*35;
+      t.mesh.position.set(x,0,z);t.targetX=x;t.speed=9+Math.random()*5;t.laneTimer=4+Math.random()*5;
+      if(t.parked)for(const c of chunks)if(c.intersection&&Math.abs(z-(c.group.position.z-30))<18)t.mesh.position.z-=28;
     }
     function updateTraffic(dt) {
       for(let i=0;i<traffic.length;i++) {
-        const t=traffic[i],v=t.mesh;
+        const t=traffic[i],v=t.mesh,dir=t.direction,base=dir===1?Math.PI:0;
         if(v.position.z>state.carZ+45||Math.abs(v.position.x)>43) {placeTraffic(t,i);continue;}
         if(t.hit) {
-          v.position.x+=t.push*dt;t.push*=Math.exp(-2.1*dt);v.rotation.y+=Math.sign(t.push)*dt*.45;
-          if(t.parked) {
-            const target=t.side*14;
-            v.position.x=THREE.MathUtils.damp(v.position.x,target,2.8,dt);
-            if(Math.abs(v.position.x-target)<.15)v.position.x=target;
-          }
+          v.position.x+=t.push*dt;t.push*=Math.exp(-2.1*dt);
+          if(t.parked)v.position.x=THREE.MathUtils.damp(v.position.x,t.side*21,2.8,dt);
           continue;
         }
         if(!t.parked) {
           if(t.turn) {
-            const turn=t.turn;turn.progress=Math.min(1,turn.progress+t.speed*dt/(Math.PI*6));
-            const angle=turn.progress*Math.PI/2;
-            v.position.x=turn.x+turn.side*12*(1-Math.cos(angle));v.position.z=turn.z-12*Math.sin(angle);v.rotation.y=-turn.side*angle;
-            if(turn.progress===1){t.turn=null;t.turnDone=true;t.exitSide=turn.side;}
-          } else if(t.turnDone) v.position.x+=t.exitSide*t.speed*dt;
+            const q=t.turn;q.progress=Math.min(1,q.progress+t.speed*dt/(Math.PI*6));
+            const angle=q.progress*Math.PI/2;
+            v.position.x=q.x+q.side*12*(1-Math.cos(angle));v.position.z=q.z+dir*12*Math.sin(angle);
+            v.rotation.y=base+dir*q.side*angle;
+            if(q.progress===1){t.turn=null;t.turnDone=true;t.exitSide=q.side;}
+          } else if(t.turnDone)v.position.x+=t.exitSide*t.speed*dt;
           else {
-            let ahead=1000;
-            for(const other of traffic)if(other!==t&&!other.hit&&Math.abs(other.mesh.position.x-v.position.x)<2.5&&other.mesh.position.z<v.position.z)ahead=Math.min(ahead,v.position.z-other.mesh.position.z);
-            v.position.z-=t.speed*THREE.MathUtils.clamp((ahead-6)/10,0,1)*dt;
-            const workAhead=chunks.some(c=>c.workZone&&v.position.z-c.group.position.z<25&&v.position.z-c.group.position.z>-60);
-            if(workAhead)t.targetX=3.7;
-            t.laneTimer-=dt;
-            if(t.laneTimer<=0) {
-              const next=-t.targetX;
-              const clear=traffic.every(o=>o===t||Math.abs(o.mesh.position.z-v.position.z)>14||Math.abs(o.mesh.position.x-next)>2.5);
-              if(clear&&!workAhead)t.targetX=next;t.laneTimer=5+Math.random()*5;
-            }
-            const oldX=v.position.x;v.position.x=THREE.MathUtils.damp(oldX,t.targetX,1.3,dt);v.rotation.y=-(v.position.x-oldX)/Math.max(dt,.001)*.045;
-            for(const c of chunks)if(c.intersection) {
-              const distance=v.position.z-(c.group.position.z-30+12);
-              const intersectionKey=c.group.position.z;
-              if(distance>=0&&distance<t.speed*dt+1&&t.lastJunction!==intersectionKey) {
-                t.lastJunction=intersectionKey;
-                if(Math.random()<.6)t.turn={x:v.position.x,z:v.position.z,side:Math.random()<.5?-1:1,progress:0};
+            // Plan left turns early. Both directions enter the shared center lane.
+            if(!t.plan)for(const c of chunks)if(c.intersection) {
+              const junction=c.group.position.z-30;
+              const distance=(junction-v.position.z)*dir;
+              if(distance>25&&distance<65&&t.lastJunction!==junction) {
+                t.lastJunction=junction;
+                if(Math.random()<.55)t.plan={junction,left:Math.random()<.65};
               }
             }
+            let target=t.targetX;
+            const workAhead=dir===-1&&chunks.some(c=>c.workZone&&v.position.z-c.group.position.z<30&&v.position.z-c.group.position.z>-60);
+            if(t.plan)target=t.plan.left?0:(dir===-1?12:-12);
+            else if(workAhead)target=12;
+            else if((t.laneTimer-=dt)<=0) {
+              const next=(dir===-1?1:-1)*(Math.abs(t.targetX)===6?12:6);
+              if(traffic.every(o=>o===t||Math.abs(o.mesh.position.z-v.position.z)>18||Math.abs(o.mesh.position.x-next)>2.5))t.targetX=next;
+              t.laneTimer=5+Math.random()*5;target=t.targetX;
+            }
+            let speed=t.speed;
+            for(const o of traffic)if(o!==t&&!o.hit&&Math.abs(o.mesh.position.x-v.position.x)<2.6) {
+              const ahead=(o.mesh.position.z-v.position.z)*dir;
+              if(ahead>0&&ahead<16)speed=Math.min(speed,Math.max(0,(ahead-7)*1.5));
+            }
+            // Yield center-lane entry and left turns to conflicting traffic.
+            if(t.plan&&t.plan.left) {
+              const conflict=traffic.some(o=>o!==t&&!o.parked&&!o.hit&&
+                ((Math.abs(o.mesh.position.x)<2.6&&Math.abs(o.mesh.position.z-v.position.z)<24)||
+                (o.direction!==dir&&Math.abs(o.mesh.position.z-t.plan.junction)<26)));
+              if(conflict){target=v.position.x;speed=0;}
+            }
+            const old=v.position.x;v.position.x=THREE.MathUtils.damp(old,target,1.8,dt);v.rotation.y=base+dir*(v.position.x-old)/Math.max(dt,.001)*.04;
+            const nextZ=v.position.z+dir*speed*dt;
+            if(t.plan) {
+              const start=t.plan.junction-dir*12;
+              if((start-v.position.z)*dir>=0&&(start-nextZ)*dir<=0) {
+                if(Math.abs(v.position.x-target)<.6&&speed>0) {
+                  v.position.z=start;t.turn={x:v.position.x,z:start,side:t.plan.left?dir:-dir,progress:0};t.plan=null;
+                } else speed=0;
+              }
+            }
+            if(!t.turn)v.position.z+=dir*speed*dt;
           }
         }
         if(state.running&&Math.abs(v.position.z-state.carZ)<3.1+t.length/2&&Math.abs(v.position.x-state.carX)<2.25) {
@@ -435,7 +464,7 @@
         running: true,
         speed: 22,
         steerVel: 0,
-        carX: 0,
+        carX: 12,
         carZ: 0,
         collapseZ: 45,
         collapseSpeed: 31, // Constantly chases the player
@@ -444,7 +473,7 @@
       };
 
       traffic.forEach((t,i)=>{t.lastJunction=null;placeTraffic(t,i,true);});
-      car.position.set(0, 0, 0);
+      car.position.set(12, 0, 0);
       car.rotation.set(0, 0, 0);
       document.getElementById('overlay').classList.remove('active');
     }
@@ -540,7 +569,7 @@
         let roughRoad=false, pothole=false;
         for(const chunk of chunks) if(chunk.workZone) {
           const localZ=state.carZ-chunk.group.position.z;
-          if(state.carX>-9.6&&state.carX<-.7&&localZ<-27&&localZ>-53) {
+          if(state.carX>2.7&&state.carX<8.5&&localZ<-27&&localZ>-53) {
             roughRoad=true;
             pothole ||= chunk.damage.some(d=>Math.hypot(state.carX-d.x,localZ-d.z)<d.r+1);
           }
