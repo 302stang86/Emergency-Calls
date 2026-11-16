@@ -253,6 +253,7 @@
 
       // Standard orange road cones with reflective white bands
       const obstacles = [];
+      const workRoot=new THREE.Group();group.add(workRoot);
       const workZone = !intersection && Math.abs(Math.round(zStart/CHUNK_LENGTH))%6===4;
       // Approach from local Z=0: taper from the left shoulder to the center line,
       // then a straight cone line protects the damaged left lane.
@@ -276,7 +277,7 @@
         }
         obs.position.set(coneLayout[i][0]+10,0,coneLayout[i][1]);
         obs.userData = { hit: false, halfW: .45 };
-        group.add(obs);
+        workRoot.add(obs);
         obstacles.push(obs);
       }
 
@@ -285,36 +286,39 @@
         const gravel=new THREE.MeshStandardMaterial({color:0x776b5b,roughness:1});
         const pitMat=new THREE.MeshStandardMaterial({color:0x161d23,roughness:1});
         const rough=new THREE.MeshStandardMaterial({color:0x48443d,roughness:1});
-        box(group,5.2,.035,24,5.5,.025,-40,gravel);
+        box(workRoot,5.2,.035,24,5.5,.025,-40,gravel);
         // Jagged dark potholes, broken asphalt edges, and scattered gravel.
         for(const [x,z,r] of [[4.2,-33,1.05],[6.6,-39,1.2],[4,-46,1.25],[6,-49,.85]]) {
-          const pit=new THREE.Mesh(new THREE.CylinderGeometry(r,r,.045,9),pitMat);pit.position.set(x,.065,z);group.add(pit);
+          const pit=new THREE.Mesh(new THREE.CylinderGeometry(r,r,.045,9),pitMat);pit.position.set(x,.065,z);workRoot.add(pit);
           damage.push({x,z,r});
           for(let j=0;j<8;j++) {
             const angle=j*Math.PI/4;
             const rock=new THREE.Mesh(new THREE.DodecahedronGeometry(.13+Math.random()*.13,0),rough);
-            rock.position.set(x+Math.cos(angle)*r,.12,z+Math.sin(angle)*r);rock.scale.y=.45;group.add(rock);
+            rock.position.set(x+Math.cos(angle)*r,.12,z+Math.sin(angle)*r);rock.scale.y=.45;workRoot.add(rock);
           }
         }
         for(let i=0;i<38;i++) {
-          const chip=box(group,.08+Math.random()*.17,.035,.1+Math.random()*.2,3.2+Math.random()*4.7,.065,-29-Math.random()*22,rough);chip.rotation.y=Math.random()*Math.PI;
+          const chip=box(workRoot,.08+Math.random()*.17,.035,.1+Math.random()*.2,3.2+Math.random()*4.7,.065,-29-Math.random()*22,rough);chip.rotation.y=Math.random()*Math.PI;
         }
         const signCanvas=document.createElement('canvas');signCanvas.width=512;signCanvas.height=256;
-        const sc=signCanvas.getContext('2d');sc.fillStyle='#ff8a23';sc.fillRect(0,0,512,256);sc.strokeStyle='#20242a';sc.lineWidth=14;sc.strokeRect(10,10,492,236);sc.fillStyle='#172330';sc.textAlign='center';sc.font='bold 54px sans-serif';sc.fillText('LEFT LANE',256,85);sc.fillText('CLOSED',256,150);sc.font='bold 42px sans-serif';sc.fillText('MERGE RIGHT →',256,215);
-        const sign=new THREE.Mesh(new THREE.PlaneGeometry(3,1.5),new THREE.MeshBasicMaterial({map:new THREE.CanvasTexture(signCanvas)}));sign.position.set(16,2.25,-3);group.add(sign);box(group,.12,1.6,.12,16,.8,-3,chrome);
+        const sc=signCanvas.getContext('2d');sc.fillStyle='#ff8a23';sc.fillRect(0,0,512,256);sc.strokeStyle='#20242a';sc.lineWidth=14;sc.strokeRect(10,10,492,236);sc.fillStyle='#172330';sc.textAlign='center';sc.font='bold 54px sans-serif';sc.fillText('ROAD WORK',256,85);sc.fillText('LANE CLOSED',256,150);sc.font='bold 42px sans-serif';sc.fillText('USE OPEN LANE',256,215);
+        const sign=new THREE.Mesh(new THREE.PlaneGeometry(3,1.5),new THREE.MeshBasicMaterial({map:new THREE.CanvasTexture(signCanvas)}));sign.position.set(16,2.25,-3);workRoot.add(sign);box(workRoot,.12,1.6,.12,16,.8,-3,chrome);
       }
       scene.add(group);
-      return { group, buildings, obstacles, intersection, workZone, damage };
+      const chunk={group,buildings,obstacles,intersection,workZone,damage,workRoot,workLane:6,rubble:[]};
+      configureWork(chunk);configureCollapse(chunk,zStart===0||zStart===-60);return chunk;
 
     }
 
     function recycleChunk(chunk, newZ) {
+      chunk.rubble.forEach(r=>{chunk.group.remove(r);r.traverse(o=>{if(o.geometry)o.geometry.dispose();});});chunk.rubble=[];
+      configureWork(chunk);
       // Preserve the intersection layout when recycling this tile.
       chunk.group.position.z = newZ;
       chunk.buildings.forEach(b => {
         b.rotation.z = 0;
         b.position.y = b.geometry.parameters.height / 2;
-        b.userData.shouldCollapse = Math.random() < 0.5;
+        b.userData.shouldCollapse = false;
         b.userData.collapseProgress = 0;
       });
       chunk.obstacles.forEach(obs => {
@@ -322,6 +326,70 @@
         obs.userData.hit = false;
         // Keep the construction taper intact after tile recycling.
       });
+      configureCollapse(chunk,false);
+    }
+
+    function configureWork(c) {
+      c.workLane=[-12,-6,0,6,12][Math.floor(Math.random()*5)];
+      const reverse=c.workLane<0;
+      c.workRoot.rotation.y=reverse?Math.PI:0;
+      c.workRoot.position.set(c.workLane+(reverse?6:-6),0,reverse?-60:0);
+      c.damageWorld=c.damage.map(d=>({x:c.workLane+(reverse?6-d.x:d.x-6),z:reverse?-60-d.z:d.z,r:d.r}));
+    }
+    function configureCollapse(c,safe) {
+      c.buildings.forEach(b=>{b.userData.event=null;b.userData.shouldCollapse=false;b.material.emissive.setHex(0);});
+      if(safe||c.workZone||!c.buildings.length||Math.random()>.38)return;
+      const b=c.buildings[Math.floor(Math.random()*c.buildings.length)];
+      b.userData.event={age:0,started:false,burst:false,landed:false,slab:null};
+    }
+    const effects=[];
+    const fxGeo=new THREE.IcosahedronGeometry(1,0);
+    function burst(x,y,z,count,dust=false) {
+      for(let i=0;i<count;i++) {
+        const mat=new THREE.MeshBasicMaterial({color:dust?0x9b9d98:(i%3===0?0xffb544:0x777d82),transparent:true,opacity:dust?.35:1,depthWrite:!dust});
+        const mesh=new THREE.Mesh(fxGeo,mat);const size=dust?.7+Math.random():.06+Math.random()*.25;
+        mesh.scale.setScalar(size);mesh.position.set(x,y,z);scene.add(mesh);
+        effects.push({mesh,v:new THREE.Vector3((Math.random()-.5)*10,dust?2+Math.random()*3:3+Math.random()*8,(Math.random()-.5)*10),age:0,life:dust?4:2,dust});
+      }
+    }
+    function updateEffects(dt) {
+      for(let i=effects.length-1;i>=0;i--) {
+        const e=effects[i];e.age+=dt;e.mesh.position.addScaledVector(e.v,dt);
+        if(e.dust){e.v.multiplyScalar(Math.exp(-dt));e.mesh.scale.multiplyScalar(1+dt*.5);}else e.v.y-=14*dt;
+        e.mesh.material.opacity=(e.dust?.35:1)*Math.max(0,1-e.age/e.life);
+        if(e.age>=e.life){scene.remove(e.mesh);e.mesh.material.dispose();effects.splice(i,1);}
+      }
+    }
+    function updateBuilding(c,b,dt) {
+      const e=b.userData.event;if(!e)return;
+      const wz=c.group.position.z+b.position.z;
+      if(!e.started&&wz-state.carZ<-145)return;
+      if(wz>state.carZ+30&&!e.started)return;
+      e.started=true;e.age+=dt;
+      const side=b.userData.side;
+      // Warning tremor and falling chips before the facade breaks away.
+      if(e.age<2.5) {
+        b.rotation.z=Math.sin(e.age*35)*.003;
+        b.material.emissive.setHex(Math.sin(e.age*22)>0?0x231709:0);
+        if(Math.random()<dt*9)burst(side*19.3,8,wz,2);
+        return;
+      }
+      b.rotation.z=0;b.material.emissive.setHex(0);
+      if(!e.burst) {
+        e.burst=true;burst(side*19,10,wz,26);burst(side*19,8,wz,16,true);
+        const slab=box(c.group,1.1,9,5,side*19,7,b.position.z,b.material);e.slab=slab;c.rubble.push(slab);
+      }
+      const t=Math.min(1,(e.age-2.5)/1.5);
+      e.slab.position.set(side*(19-5.3*t),7-6*t*t,b.position.z);e.slab.rotation.z=side*t*1.2;
+      if(t===1&&!e.landed) {
+        e.landed=true;burst(side*13,1,wz,18,true);
+        e.slab.userData={hazard:true,halfW:2,halfD:3,hit:false};
+        for(let i=0;i<7;i++) {
+          const rock=new THREE.Mesh(new THREE.DodecahedronGeometry(.4+Math.random()*.5,0),b.material);
+          rock.position.set(side*(11.7+Math.random()*3),.3+Math.random()*.3,b.position.z+(Math.random()-.5)*6);rock.scale.y=.6;rock.castShadow=true;
+          rock.userData={hazard:true,halfW:.6,halfD:.7,hit:false};c.group.add(rock);c.rubble.push(rock);
+        }
+      }
     }
 
     // Pooled traffic: independent world positions, reusable models and collision state.
@@ -388,9 +456,10 @@
               }
             }
             let target=t.targetX;
-            const workAhead=dir===-1&&chunks.some(c=>c.workZone&&v.position.z-c.group.position.z<30&&v.position.z-c.group.position.z>-60);
+            const workAhead=chunks.find(c=>c.workZone&&Math.sign(c.workLane)===(dir===-1?1:-1)&&v.position.z-c.group.position.z<30&&v.position.z-c.group.position.z>-60);
+            if(t.plan&&chunks.some(c=>c.workZone&&c.workLane===0&&Math.abs(c.group.position.z-v.position.z)<80))t.plan=null;
             if(t.plan)target=t.plan.left?0:(dir===-1?12:-12);
-            else if(workAhead)target=12;
+            else if(workAhead)target=(dir===-1?1:-1)*(Math.abs(workAhead.workLane)===6?12:6);
             else if((t.laneTimer-=dt)<=0) {
               const next=(dir===-1?1:-1)*(Math.abs(t.targetX)===6?12:6);
               if(traffic.every(o=>o===t||Math.abs(o.mesh.position.z-v.position.z)>18||Math.abs(o.mesh.position.x-next)>2.5))t.targetX=next;
@@ -454,6 +523,7 @@
 
     let state = {};
     function resetGame() {
+      effects.forEach(e=>{scene.remove(e.mesh);e.mesh.material.dispose();});effects.length=0;
       chunks.forEach(c => {scene.remove(c.group);c.group.traverse(o=>{if(o.geometry)o.geometry.dispose();});});
       chunks.length = 0;
       for (let i = 0; i < NUM_CHUNKS; i++) {
@@ -536,23 +606,23 @@
             recycleChunk(chunk, minZ - CHUNK_LENGTH);
           }
 
-          // Trigger building collapse when player gets within 75 units
-          chunk.buildings.forEach(b => {
-            if (!b.userData.shouldCollapse) return;
-            const worldZ = chunk.group.position.z + b.position.z;
-            if (worldZ - state.carZ > -75) {
-              b.userData.collapseProgress = Math.min(1, b.userData.collapseProgress + dt * 0.9);
-              // Tilt inward toward the street
-              b.rotation.z = b.userData.side * b.userData.collapseProgress * 0.45;
-              b.position.y -= dt * 4 * b.userData.collapseProgress;
+          chunk.buildings.forEach(b=>updateBuilding(chunk,b,dt));
+          for(const r of chunk.rubble) {
+            if(!state.running||!r.userData.hazard||r.userData.hit)continue;
+            if(Math.abs(r.position.x-state.carX)<r.userData.halfW+1.25&&Math.abs(chunk.group.position.z+r.position.z-state.carZ)<r.userData.halfD+3.1) {
+              // One damage event per rubble pile, while its visible debris stays in place.
+              chunk.rubble.forEach(piece=>piece.userData.hit=true);
+              state.impacts++;state.speed*=.5;state.shake=1;
+              if(state.impacts>=5)triggerGameOver('Fire truck disabled by collision damage.');
             }
-          });
+          }
 
           // Obstacle AABB collision check
           chunk.obstacles.forEach(obs => {
             if (obs.userData.hit) return;
-            const worldZ = chunk.group.position.z + obs.position.z;
-            if (Math.abs(worldZ - state.carZ) < 3.45 && Math.abs(obs.position.x - state.carX) < obs.userData.halfW + 1.25) {
+            const conePos=obs.getWorldPosition(new THREE.Vector3());
+            const worldZ = conePos.z;
+            if (Math.abs(worldZ - state.carZ) < 3.45 && Math.abs(conePos.x - state.carX) < obs.userData.halfW + 1.25) {
               obs.userData.hit = true;
               obs.visible = false;
               state.impacts += 1;
@@ -569,22 +639,25 @@
         let roughRoad=false, pothole=false;
         for(const chunk of chunks) if(chunk.workZone) {
           const localZ=state.carZ-chunk.group.position.z;
-          if(state.carX>2.7&&state.carX<8.5&&localZ<-27&&localZ>-53) {
+          const workZ=chunk.workLane<0?-60-localZ:localZ;
+          if(Math.abs(state.carX-chunk.workLane)<3.3&&workZ<-27&&workZ>-53) {
             roughRoad=true;
-            pothole ||= chunk.damage.some(d=>Math.hypot(state.carX-d.x,localZ-d.z)<d.r+1);
+            pothole ||= chunk.damageWorld.some(d=>Math.hypot(state.carX-d.x,localZ-d.z)<d.r+1);
           }
         }
         if(roughRoad) {
           state.speed=Math.max(8,state.speed-(pothole?58:37)*dt);
           state.shake=Math.max(state.shake,pothole?.24:.1);
         }
-        document.getElementById('road-status').textContent=roughRoad?(pothole?'POTHOLE · SLOWDOWN':'ROUGH ROAD · SLOWDOWN'):'KEEP RIGHT AT ROAD WORK';
+        document.getElementById('road-status').textContent=roughRoad?(pothole?'POTHOLE · SLOWDOWN':'ROUGH ROAD · SLOWDOWN'):'WATCH FOR ROAD WORK / FALLING DEBRIS';
 
         // Update HUD
         document.getElementById('impacts').textContent = state.impacts;
         document.getElementById('gap').textContent = gap;
         document.getElementById('speed').textContent = Math.round(state.speed * 3.6);
       }
+
+      updateEffects(dt);
 
       // Blizzard snow movement relative to car
       const posArr = snowPoints.geometry.attributes.position.array;
