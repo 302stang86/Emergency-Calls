@@ -38,12 +38,19 @@
     #brand b {font-size:clamp(20px,4vw,30px);letter-spacing:.06em} #brand span {color:#ff5858}
     #brand small {display:block; font-size:10px;letter-spacing:.24em;margin-top:5px;color:#d4e6f1}
     .panel {background:rgba(15,32,49,.86);border:1px solid #7694a555;border-radius:12px;box-shadow:0 8px 24px #0c1b2922;font-size:12px;letter-spacing:.04em;}
-    #overlay {background:rgba(12,26,42,.93);padding:24px;} #overlay p {max-width:580px;line-height:1.65;color:#d8e6f1} #overlay h1 {font-size:clamp(24px,5vw,48px)}
+    #overlay {background:rgba(12,26,42,.93);padding:24px;overflow-y:auto;gap:12px;} #overlay p {max-width:580px;line-height:1.65;color:#d8e6f1} #overlay h1 {font-size:clamp(24px,5vw,48px)}
     button {background:#df343e;border-radius:10px;box-shadow:0 4px 20px #0003;}
     #controls-hint {background:#102336ce;padding:10px 16px;border-radius:20px;opacity:1;white-space:nowrap;}
     #touch {display:none;position:fixed;bottom:25px;left:18px;right:18px;justify-content:space-between;}
     #touch div {display:flex;gap:10px} #touch button {touch-action:none;width:62px;height:62px;padding:0;background:#142f46d9;border:1px solid #d0e5f666;font-size:14px;user-select:none;}
     @media(pointer:coarse) {#touch {display:flex} #controls-hint {bottom:100px;font-size:10px} .panel {padding:10px 8px;font-size:10px} #hud {left:12px;right:12px;gap:6px}}
+    #vehicle-select {display:flex;flex-wrap:wrap;gap:10px;margin:6px 0;}
+    .veh-btn {flex:1 1 145px;padding:12px 14px;min-height:48px;background:#243b50;border:2px solid #638097;font-size:12px;letter-spacing:.025em;text-transform:none;box-shadow:none;}
+    .veh-btn.active {background:#b82433;border-color:#ffb2b9;box-shadow:0 0 0 2px #ff687322;}
+    .veh-btn:focus-visible {outline:3px solid #b8e5ff;outline-offset:3px;}
+    .veh-btn:disabled,.veh-btn[aria-disabled="true"] {opacity:.6;cursor:not-allowed;}
+    #lock-status {display:block;font-size:10px;color:#ff9393;margin-top:4px;}
+    @media(max-height:650px) {#overlay.active {justify-content:flex-start;} #overlay h1 {font-size:24px;} #overlay p {font-size:12px;}}
   </style>
   <script type="importmap">
     {
@@ -58,7 +65,7 @@
   <div id="brand"><b>EMERGENCY <span>CALLS</span></b><small>FDEC DISPATCH · UNIT 01</small></div>
   <div id="hud">
     <div class="panel">Impacts: <span id="impacts">0</span> / 5</div>
-    <div class="panel">Lead on Gallagher: <span id="gap">40</span>m</div>
+    <div class="panel"><span id="lead-label">Gallagher ahead</span>: <span id="gap">4</span>m</div>
     <div class="panel">Job Site: <span id="distance">2,500</span>m</div>
     <div class="panel">Speed: <span id="speed">0</span> km/h</div>
   </div>
@@ -70,6 +77,20 @@
   <div id="overlay">
     <h1 id="overlay-title">RESPONSE INTERRUPTED</h1>
     <p id="overlay-sub">Reach the job site before Gallagher Fire.</p>
+    <div id="vehicle-choice" style="display:grid;gap:8px;text-align:left;width:min(620px,100%);font-size:13px;font-weight:700">
+      <span id="vehicle-label">Choose your vehicle</span>
+      <div id="vehicle-select" role="group" aria-labelledby="vehicle-label">
+        <button type="button" class="veh-btn active" data-veh="firetruck" aria-pressed="true">Fire Truck</button>
+        <button type="button" class="veh-btn" data-veh="detailed" aria-pressed="false">Detailed Fire Truck</button>
+        <button type="button" class="veh-btn" data-veh="promaster" aria-pressed="false">Ram ProMaster</button>
+        <button type="button" class="veh-btn" data-veh="silverado" aria-pressed="false">Silverado</button>
+        <button type="button" class="veh-btn" id="corvette-btn" data-veh="corvette" aria-pressed="false">Corvette <span id="lock-status">🔒 (Locked)</span></button>
+      </div>
+    </div>
+    <label id="level-choice" style="display:grid;gap:8px;text-align:left;width:min(360px,100%);font-size:13px;font-weight:700">Choose dispatch level
+      <select id="level-select" style="width:100%;padding:12px;border-radius:10px;border:1px solid #71899c;background:#21384d;color:white;font:inherit"></select>
+    </label>
+    <button id="next-level-btn" style="display:none">Next Level</button>
     <button id="restart-btn">Start Dispatch</button>
     <button id="menu-btn" style="background:#31485c;display:none">Return to Main Menu</button>
   </div>
@@ -126,6 +147,14 @@
     scene.add(dirLight);
 
     // --- 3. SHARED MATERIALS & CONSTANTS ---
+    const LEVELS=[
+      {level:1,distance:1500,rivalSpeed:26,aggression:.2,title:'Level 1: Morning Frost'},
+      {level:2,distance:2200,rivalSpeed:32,aggression:.4,title:'Level 2: Heavy Sleet'},
+      {level:3,distance:3000,rivalSpeed:38,aggression:.7,title:'Level 3: Blizzard Rush'},
+      {level:4,distance:4000,rivalSpeed:45,aggression:1,title:'Level 4: Whiteout Emergency'}
+    ];
+    let currentLevelIndex=0;
+    const activeLevel=()=>LEVELS[currentLevelIndex];
     const ROAD_WIDTH = 36;
     const CHUNK_LENGTH = 60;
     const NUM_CHUNKS = 6;
@@ -263,6 +292,228 @@
     const headlights=new THREE.SpotLight(0xffedcc,85,65,.48,.6,1.3);
     headlights.position.set(0,1,-3.2);headlights.target.position.set(0,0,-30);car.add(headlights,headlights.target);
     scene.add(car);
+    // Keep the physics/camera rig separate from each selectable visual model.
+    const classicVisual=new THREE.Group();
+    for(const child of [...car.children])if(!child.isLight&&child!==headlights.target)classicVisual.add(child);
+    car.add(classicVisual);
+    function createDetailedFireTruck() {
+      const truck=new THREE.Group();
+      const paint=new THREE.MeshStandardMaterial({color:0xc82432,metalness:.35,roughness:.3});
+      const trim=new THREE.MeshStandardMaterial({color:0x172634,metalness:.4,roughness:.4});
+      const windows=new THREE.MeshStandardMaterial({color:0x193c55,metalness:.7,roughness:.1,transparent:true,opacity:.85});
+      const metal=new THREE.MeshStandardMaterial({color:0xd0e0e8,metalness:.9,roughness:.2});
+      const rubber=new THREE.MeshStandardMaterial({color:0x111111,roughness:.9});
+      box(truck,2.45,.45,6.1,0,.78,0,trim);
+      box(truck,2.5,1.8,3.2,0,1.6,1.2,paint);
+      const windshield=new THREE.Mesh(new THREE.PlaneGeometry(2.1,.9),windows);windshield.position.set(0,2.1,2.81);windshield.rotation.x=-.35;truck.add(windshield);
+      box(truck,2.5,2.1,3,0,1.8,-1.5,paint);
+      box(truck,2.1,.2,2.6,0,2.9,-1.5,metal);
+      for(const side of [-1,1]) {
+        box(truck,.15,.25,.1,side*1.35,2,2.2,metal);box(truck,.1,.3,.2,side*1.42,2,2.2,trim);
+        for(const z of [-2,1.4,2.3]) {
+          const tire=new THREE.Mesh(new THREE.CylinderGeometry(.52,.52,.38,24),rubber);tire.rotation.z=Math.PI/2;tire.position.set(side*1.23,.52,z);tire.castShadow=true;truck.add(tire);
+          const hub=new THREE.Mesh(new THREE.CylinderGeometry(.28,.28,.4,16),metal);hub.rotation.z=Math.PI/2;hub.position.copy(tire.position);truck.add(hub);
+        }
+        box(truck,.23,.48,.06,side*1.02,1.02,-3.04,new THREE.MeshBasicMaterial({color:0xff302b}));
+        box(truck,.48,.22,.06,side*.8,1.03,3.17,new THREE.MeshBasicMaterial({color:0xffedbb}));
+      }
+      box(truck,2.1,.8,.1,0,1.3,3.1,metal);
+      box(truck,2.6,.22,.22,0,.65,-3.12,metal);
+      const badge=new THREE.Mesh(new THREE.PlaneGeometry(1.9,.85),signMat);badge.rotation.y=Math.PI;badge.position.set(0,1.9,-3.025);truck.add(badge);
+      box(truck,1.65,.12,.44,0,2.65,1.2,trim);
+      for(let i=0;i<2;i++)box(truck,.65,.22,.4,(i===0?-1:1)*.44,2.82,1.2,beacons[i].material);
+      truck.rotation.y=Math.PI;return truck;
+    }
+    function createRamProMaster() {
+      const van=new THREE.Group();
+      const redPaint=new THREE.MeshStandardMaterial({color:0xba1c24,metalness:.2,roughness:.4});
+      const darkTrim=new THREE.MeshStandardMaterial({color:0x22262a,roughness:.8});
+      const windows=new THREE.MeshStandardMaterial({color:0x15222b,metalness:.8,roughness:.1});
+      const metal=new THREE.MeshStandardMaterial({color:0xc5d3de,metalness:.9,roughness:.2});
+      box(van,2.2,2.2,4.8,0,1.5,0,redPaint);
+      box(van,2.1,1,1.4,0,1.1,2.6,redPaint);
+      const frontGlass=new THREE.Mesh(new THREE.PlaneGeometry(1.8,.9),windows);frontGlass.position.set(0,1.8,3.25);frontGlass.rotation.x=-.45;van.add(frontGlass);
+      box(van,2.3,.08,.1,0,2.65,.8,metal);box(van,2.3,.08,.1,0,2.65,-1.2,metal);
+      for(const side of [-1,1]) {
+        for(const z of [-1.5,1.5]) {
+          const tire=new THREE.Mesh(new THREE.CylinderGeometry(.45,.45,.32,20),darkTrim);tire.rotation.z=Math.PI/2;tire.position.set(side*1.15,.45,z);tire.castShadow=true;van.add(tire);
+        }
+        box(van,.035,.7,1,side*1.115,2,1.4,windows);
+        box(van,.15,.3,.25,side*1.22,1.85,2,darkTrim);
+        box(van,.22,.5,.06,side*.87,1.05,-2.435,new THREE.MeshBasicMaterial({color:0xff302b}));
+        box(van,.4,.2,.06,side*.7,1,3.335,new THREE.MeshBasicMaterial({color:0xffedbb}));
+        box(van,.07,.08,.3,side*1.13,1.2,-.4,darkTrim);
+      }
+      box(van,.035,1.7,.04,0,1.5,-2.42,darkTrim);
+      box(van,2.3,.23,.18,0,.6,-2.5,darkTrim);box(van,2.2,.25,.16,0,.6,3.35,darkTrim);
+      const badge=new THREE.Mesh(new THREE.PlaneGeometry(1.6,.72),signMat);badge.rotation.y=Math.PI;badge.position.set(0,1.9,-2.445);van.add(badge);
+      box(van,1.5,.1,.38,0,2.72,.8,darkTrim);
+      for(let i=0;i<2;i++)box(van,.6,.2,.35,(i===0?-1:1)*.38,2.86,.8,beacons[i].material);
+      van.rotation.y=Math.PI;return van;
+    }
+    function createChevySilverado() {
+      const truck=new THREE.Group();
+      const paint=new THREE.MeshStandardMaterial({color:0xc42028,metalness:.3,roughness:.35});
+      const trim=new THREE.MeshStandardMaterial({color:0x1a1e22,roughness:.8});
+      const windows=new THREE.MeshStandardMaterial({color:0x192a38,metalness:.7,roughness:.2});
+      const metal=new THREE.MeshStandardMaterial({color:0xd8e4ed,metalness:.85,roughness:.2});
+      box(truck,2.2,1.5,2.2,0,1.35,.8,paint);
+      box(truck,2.2,1.5,2.4,0,1.35,-1.5,paint);
+      const windshield=new THREE.Mesh(new THREE.PlaneGeometry(1.8,.8),windows);windshield.position.set(0,1.7,1.92);windshield.rotation.x=-.4;truck.add(windshield);
+      box(truck,2.1,.6,.2,0,.9,1.95,metal);
+      box(truck,2.3,.2,.2,0,.58,2.04,metal);
+      box(truck,2.3,.2,.2,0,.6,-2.79,metal);
+      for(const side of [-1,1]) {
+        for(const z of [-1.5,1.4]) {
+          const tire=new THREE.Mesh(new THREE.CylinderGeometry(.55,.55,.42,22),trim);tire.rotation.z=Math.PI/2;tire.position.set(side*1.2,.55,z);tire.castShadow=true;truck.add(tire);
+          const hub=new THREE.Mesh(new THREE.CylinderGeometry(.28,.28,.44,16),metal);hub.rotation.z=Math.PI/2;hub.position.copy(tire.position);truck.add(hub);
+        }
+        box(truck,.035,.6,1.4,side*1.115,1.73,.8,windows);
+        box(truck,.035,.55,1.6,side*1.115,1.73,-1.5,windows);
+        box(truck,.18,.28,.25,side*1.25,1.5,1.4,trim);
+        box(truck,.19,.4,.06,side*.92,1,-2.735,new THREE.MeshBasicMaterial({color:0xff302b}));
+        box(truck,.35,.2,.06,side*.8,1.1,2.065,new THREE.MeshBasicMaterial({color:0xffedbb}));
+      }
+      box(truck,1.75,.5,.04,0,1.75,-2.725,windows);
+      const badge=new THREE.Mesh(new THREE.PlaneGeometry(1.5,.6),signMat);badge.rotation.y=Math.PI;badge.position.set(0,1.02,-2.75);truck.add(badge);
+      box(truck,1.5,.1,.36,0,2.18,.8,trim);
+      for(let i=0;i<2;i++)box(truck,.6,.2,.33,(i===0?-1:1)*.38,2.32,.8,beacons[i].material);
+      truck.rotation.y=Math.PI;return truck;
+    }
+    function createCorvette() {
+      const sportsCar=new THREE.Group();
+      const paint=new THREE.MeshStandardMaterial({color:0xd91424,metalness:.5,roughness:.25});
+      const trim=new THREE.MeshStandardMaterial({color:0x14181c,roughness:.8});
+      const windows=new THREE.MeshStandardMaterial({color:0x111c24,metalness:.8,roughness:.1});
+      const metal=new THREE.MeshStandardMaterial({color:0xe2edf5,metalness:.9,roughness:.15});
+      box(sportsCar,2,.55,4.4,0,.65,0,paint);
+      // Open cockpit: recessed interior, two seats and low painted side sills.
+      box(sportsCar,1.6,.1,1.8,0,.94,-.1,trim);
+      for(const side of [-1,1]) {
+        box(sportsCar,.15,.3,1.8,side*.76,1,-.1,paint);
+        box(sportsCar,.53,.18,.65,side*.38,1.02,-.25,trim);
+        box(sportsCar,.53,.45,.15,side*.38,1.2,-.6,trim);
+        for(const z of [-1.3,1.3]) {
+          const tire=new THREE.Mesh(new THREE.CylinderGeometry(.42,.42,.32,24),trim);tire.rotation.z=Math.PI/2;tire.position.set(side*1.05,.42,z);tire.castShadow=true;sportsCar.add(tire);
+          const hub=new THREE.Mesh(new THREE.CylinderGeometry(.27,.27,.34,16),metal);hub.rotation.z=Math.PI/2;hub.position.copy(tire.position);sportsCar.add(hub);
+        }
+        box(sportsCar,.38,.12,.055,side*.65,.73,2.23,new THREE.MeshBasicMaterial({color:0xf6efff}));
+        box(sportsCar,.42,.12,.055,side*.61,.73,-2.23,new THREE.MeshBasicMaterial({color:0xff2631}));
+        box(sportsCar,.16,.12,.24,side*1.03,1.02,.54,paint);
+      }
+      const windshield=new THREE.Mesh(new THREE.PlaneGeometry(1.6,.6),windows);windshield.position.set(0,1.1,.75);windshield.rotation.x=-.65;sportsCar.add(windshield);
+      box(sportsCar,1.7,.09,.15,0,.39,2.2,trim);
+      const badge=new THREE.Mesh(new THREE.PlaneGeometry(1.1,.3),signMat);badge.rotation.y=Math.PI;badge.position.set(0,.64,-2.24);sportsCar.add(badge);
+      for(let i=0;i<2;i++)box(sportsCar,.25,.1,.09,(i===0?-1:1)*.3,1.03,-1.25,beacons[i].material);
+      sportsCar.rotation.y=Math.PI;return sportsCar;
+    }
+    const detailedVisual=createDetailedFireTruck();car.add(detailedVisual);
+    const promasterVisual=createRamProMaster();car.add(promasterVisual);
+    const silveradoVisual=createChevySilverado();car.add(silveradoVisual);
+    const corvetteVisual=createCorvette();car.add(corvetteVisual);
+    const vehicleModels={classic:classicVisual,detailed:detailedVisual,promaster:promasterVisual,silverado:silveradoVisual,corvette:corvetteVisual};
+    function createLicensePlateTexture(plateText='FDEC-01') {
+      const canvas=document.createElement('canvas');canvas.width=256;canvas.height=128;const ctx=canvas.getContext('2d');
+      ctx.fillStyle='#f5f5dc';ctx.fillRect(0,0,256,128);ctx.strokeStyle='#111';ctx.lineWidth=10;ctx.strokeRect(5,5,246,118);
+      ctx.fillStyle='#0a2342';ctx.font='bold 24px sans-serif';ctx.textAlign='center';ctx.fillText('FDEC OFFICIAL',128,38);
+      ctx.fillStyle='#111';ctx.font='bold 42px monospace';ctx.fillText(plateText,128,92);
+      const texture=new THREE.CanvasTexture(canvas);texture.colorSpace=THREE.SRGBColorSpace;texture.anisotropy=Math.min(4,renderer.capabilities.getMaxAnisotropy());
+      return new THREE.MeshBasicMaterial({map:texture});
+    }
+    const plateMaterial=createLicensePlateTexture('FDEC-01');
+    const plateMounts={classic:{y:.68,z:3.19,rotation:0},detailed:{y:.68,z:-3.25,rotation:Math.PI},promaster:{y:.6,z:-2.6,rotation:Math.PI},silverado:{y:.6,z:-2.9,rotation:Math.PI},corvette:{y:.42,z:-2.26,rotation:Math.PI}};
+    for(const [id,model] of Object.entries(vehicleModels)) {
+      const mount=plateMounts[id],plate=new THREE.Mesh(new THREE.PlaneGeometry(.6,.3),plateMaterial);
+      plate.position.set(0,mount.y,mount.z);plate.rotation.y=mount.rotation;plate.name='FDEC rear license plate';model.add(plate);
+    }
+    let corvetteUnlocked=false;
+    try{corvetteUnlocked=localStorage.getItem('corvetteUnlocked')==='true';}catch{}
+    let selectedVehicleType='firetruck';
+    let selectedVehicle='classic';
+    function updateCorvetteOption(){
+      const button=document.getElementById('corvette-btn');button.disabled=false;button.setAttribute('aria-disabled',String(!corvetteUnlocked));
+      const status=document.getElementById('lock-status');status.hidden=false;
+      status.textContent=corvetteUnlocked?'✨ UNLOCKED':'🔒 (Locked)';
+      status.style.color=corvetteUnlocked?'#44ff44':'#ff9393';
+    }
+    function selectVehicle(id){
+      if(id==='firetruck')id='classic';
+      selectedVehicle=Object.hasOwn(vehicleModels,id)&&!(id==='corvette'&&!corvetteUnlocked)?id:'classic';
+      selectedVehicleType=selectedVehicle==='classic'?'firetruck':selectedVehicle;
+      for(const [key,model] of Object.entries(vehicleModels))model.visible=key===selectedVehicle;
+      document.querySelectorAll('.veh-btn').forEach(button=>{const active=button.dataset.veh===selectedVehicleType;button.classList.toggle('active',active);button.setAttribute('aria-pressed',String(active));});
+      try{localStorage.setItem('emergencyCallsVehicle',selectedVehicle);}catch{}
+    }
+    function unlockCorvette(){
+      corvetteUnlocked=true;try{localStorage.setItem('corvetteUnlocked','true');}catch{}
+      updateCorvetteOption();
+    }
+    let savedVehicle='classic';try{savedVehicle=localStorage.getItem('emergencyCallsVehicle')||'classic';}catch{}
+    updateCorvetteOption();selectVehicle(savedVehicle);
+    document.querySelectorAll('.veh-btn').forEach(button=>button.addEventListener('click',()=>{
+      const veh=button.dataset.veh;
+      if(veh==='corvette'&&!corvetteUnlocked){alert('🔒 Corvette Locked! Beat Level 4 against Gallagher Fire to unlock it.');return;}
+      selectVehicle(veh);
+    }));
+    function createGallagherVan() {
+      const van=new THREE.Group();
+      const whitePaint=new THREE.MeshStandardMaterial({color:0xecf0f3,metalness:.2,roughness:.4});
+      const darkTrim=new THREE.MeshStandardMaterial({color:0x1a1e22,roughness:.8});
+      const windows=new THREE.MeshStandardMaterial({color:0x15222b,metalness:.8,roughness:.1});
+      const metal=new THREE.MeshStandardMaterial({color:0xc5d3de,metalness:.9,roughness:.2});
+      box(van,2.2,2.2,4.8,0,1.5,0,whitePaint);box(van,2.1,1,1.4,0,1.1,2.6,whitePaint);
+      const canvas=document.createElement('canvas');canvas.width=512;canvas.height=128;const ctx=canvas.getContext('2d');
+      ctx.fillStyle='#ecf0f3';ctx.fillRect(0,0,512,128);ctx.fillStyle='#b31919';ctx.font='bold 52px sans-serif';ctx.textAlign='center';ctx.fillText('GALLAGHER FIRE',256,80);
+      const tex=new THREE.CanvasTexture(canvas);tex.colorSpace=THREE.SRGBColorSpace;const logo=new THREE.MeshBasicMaterial({map:tex});
+      for(const side of [-1,1]) {
+        const sign=new THREE.Mesh(new THREE.PlaneGeometry(2.2,.55),logo);sign.rotation.y=side*Math.PI/2;sign.position.set(side*1.12,1.5,.2);van.add(sign);
+        box(van,.035,.65,1.15,side*1.12,2,1.4,windows);
+        box(van,.15,.3,.25,side*1.22,1.9,2,darkTrim);
+        for(const z of [-1.5,1.5]) {
+          const tire=new THREE.Mesh(new THREE.CylinderGeometry(.45,.45,.32,20),darkTrim);tire.rotation.z=Math.PI/2;tire.position.set(side*1.15,.45,z);tire.castShadow=true;van.add(tire);
+          const hub=new THREE.Mesh(new THREE.CylinderGeometry(.22,.22,.34,12),metal);hub.rotation.z=Math.PI/2;hub.position.copy(tire.position);van.add(hub);
+        }
+        box(van,.4,.2,.06,side*.7,1,3.335,new THREE.MeshBasicMaterial({color:0xfff2d6}));
+        box(van,.22,.5,.06,side*.87,1.05,-2.435,new THREE.MeshBasicMaterial({color:0xff302b}));
+      }
+      const windshield=new THREE.Mesh(new THREE.PlaneGeometry(1.8,.9),windows);windshield.position.set(0,1.8,3.25);windshield.rotation.x=-.45;van.add(windshield);
+      box(van,2.2,.24,.18,0,.58,3.35,darkTrim);box(van,2.3,.23,.18,0,.58,-2.5,darkTrim);
+      const rearLogo=new THREE.Mesh(new THREE.PlaneGeometry(1.9,.475),logo);rearLogo.rotation.y=Math.PI;rearLogo.position.set(0,1.9,-2.43);van.add(rearLogo);
+      van.rotation.y=Math.PI;scene.add(van);return van;
+    }
+    const gallagherVan=createGallagherVan();
+    let gallagher={x:-6,z:0,speed:0,targetLane:-6};
+    function updateGallagherVan(dt) {
+      if(!state.running)return;
+      const lvl=activeLevel();
+      // Positive separation means Gallagher is behind on a route moving toward -Z.
+      let desiredSpeed=THREE.MathUtils.clamp(lvl.rivalSpeed+(gallagher.z-state.carZ)*.05,16,56);
+      const blocked=lane=>traffic.some(t=>!t.hit&&Math.abs(t.mesh.position.x-lane)<2.7&&t.mesh.position.z<gallagher.z&&t.mesh.position.z>gallagher.z-32)||
+        chunks.some(c=>(c.workZone&&Math.abs(c.workLane-lane)<2.8&&Math.abs(c.group.position.z-35-gallagher.z)<40)||c.rubble.some(r=>r.userData.hazard&&Math.abs(r.position.x-lane)<(r.userData.halfW||1)+1.1&&Math.abs(c.group.position.z+r.position.z-gallagher.z)<22));
+      // Equivalent probability to the supplied 60fps logic, independent of frame rate.
+      const chooseLane=Math.random()<1-Math.pow(1-lvl.aggression*.05,dt*60);
+      if(chooseLane)gallagher.targetLane=lvl.aggression>.5?state.carX:(Math.random()<.5?-6:6);
+      gallagher.targetLane=THREE.MathUtils.clamp(gallagher.targetLane,-16,16);
+      if(blocked(gallagher.targetLane)) {
+        const clear=[-12,-6,0,6,12].filter(lane=>!blocked(lane));
+        clear.sort((a,b)=>Math.abs(a-gallagher.targetLane)-Math.abs(b-gallagher.targetLane));
+        if(clear.length)gallagher.targetLane=clear[0];else desiredSpeed=Math.min(desiredSpeed,9);
+      }
+      gallagher.speed=THREE.MathUtils.damp(gallagher.speed,desiredSpeed,-60*Math.log(.95),dt);
+      gallagher.z-=gallagher.speed*dt;
+      const previous=gallagher.x;
+      gallagher.x=THREE.MathUtils.damp(gallagher.x,gallagher.targetLane,2.5*lvl.aggression,dt);
+      gallagherVan.position.set(gallagher.x,0,gallagher.z);
+      // Use the previous X before assigning the model position; +PI keeps its nose forward.
+      gallagherVan.rotation.y=Math.PI-THREE.MathUtils.clamp((gallagher.x-previous)/Math.max(.001,dt)*.035,-.3,.3);
+      state.rivalZ=gallagher.z;state.rivalSpeed=gallagher.speed;
+    }
+    function raceWinner(playerBefore,rivalBefore,playerAfter,rivalAfter,distance) {
+      const finish=-distance;
+      const arrival=(before,after)=>after<=finish?(before-after>0?(before-finish)/(before-after):0):Infinity;
+      const player=arrival(playerBefore,playerAfter),rival=arrival(rivalBefore,rivalAfter);
+      return !Number.isFinite(player)&&!Number.isFinite(rival)?null:player<=rival?'player':'rival';
+    }
 
     // --- 5. TRAILING WEATHER HAZE (visual atmosphere) ---
     const trailingHaze = new THREE.Mesh(
@@ -571,7 +822,7 @@
     }
     function configureCollapse(c,safe) {
       c.buildings.forEach(b=>{b.visible=true;b.userData.event=null;b.userData.shouldCollapse=false;setFacadeGlow(b,0xffeedd);});
-      if(safe||c.workZone||!c.buildings.length)return;
+      if(safe||c.workZone||!c.buildings.length||Math.random()>(.35+.65*activeLevel().aggression))return;
       // One visible collapse per eligible city block; opening blocks stay safe.
       const side=collapseSerial++%2===0?1:-1;
       const options=c.buildings.filter(b=>b.userData.side===side);
@@ -748,37 +999,66 @@
     // Pooled traffic: independent world positions, reusable models and collision state.
     const traffic=[];
     const trafficColors=[0x275e91,0xc9d1d5,0xd0a447,0x426a57,0x983c44,0x252b38];
+    const trafficGlassMat=new THREE.MeshStandardMaterial({color:0x101c26,metalness:.85,roughness:.12});
+    const trafficTireGeo=new THREE.CylinderGeometry(.42,.42,.26,18);
+    const trafficRimGeo=new THREE.CylinderGeometry(.24,.24,.28,12);
     function makeTraffic(style) {
-      const v=new THREE.Group();
-      const paint=new THREE.MeshStandardMaterial({color:trafficColors[Math.floor(Math.random()*trafficColors.length)],metalness:.4,roughness:.4});
-      const length=style===3?5:style===2?4.9:4.3;
-      box(v,2.05,.8,length,0,.9,0,paint);
-      if(style===3) {box(v,2.03,1.35,3.8,0,1.9,.5,paint);box(v,1.8,.75,.05,0,1.85,-2.03,glass);}
-      else {
-        box(v,1.83,style===1?.95:.7,style===2?1.9:2.5,0,1.65,style===2?-1:0,glass);
-        box(v,1.94,.12,style===2?2:2.65,0,style===1?2.18:2.06,style===2?-1:0,paint);
-        if(style===2) {box(v,1.7,.08,1.8,0,1.34,1.2,dark);for(const side of [-1,1])box(v,.18,.42,1.9,side*.94,1.48,1.2,paint);}
-      }
-      for(const side of [-1,1]) {
-        for(const z of [-length*.32,length*.32]) {
-          const wheel=new THREE.Mesh(new THREE.CylinderGeometry(.43,.43,.25,14),dark);wheel.rotation.z=Math.PI/2;wheel.position.set(side*1.03,.45,z);v.add(wheel);
-          const hub=new THREE.Mesh(new THREE.CylinderGeometry(.22,.22,.27,12),chrome);hub.rotation.z=Math.PI/2;hub.position.copy(wheel.position);v.add(hub);
+      const v=new THREE.Group(),isTruck=style===3,isPickup=style===2,isSUV=style===1;
+      const paint=new THREE.MeshStandardMaterial({color:isTruck?0xe8edf0:trafficColors[Math.floor(Math.random()*trafficColors.length)],metalness:isTruck?.15:.45,roughness:isTruck?.45:.28});
+      const length=isTruck?6.2:isPickup?5.1:isSUV?4.6:4.4,width=isTruck?2.25:2.02;
+      box(v,width*.96,.35,length*.98,0,.48,0,dark);
+      box(v,width+.04,.24,.22,0,.56,-length/2,dark);box(v,width+.04,.24,.22,0,.56,length/2,isTruck?chrome:dark);
+      function frontGlass(w,h,x,y,z,tilt){const pane=new THREE.Mesh(new THREE.PlaneGeometry(w,h),trafficGlassMat);pane.position.set(x,y,z);pane.rotation.set(tilt,Math.PI,0);v.add(pane);}
+      if(isTruck) {
+        box(v,2.05,1.35,1.7,0,1.25,-2.1,paint);frontGlass(1.85,.78,0,1.52,-2.98,-.25);
+        box(v,width,2.15,4.1,0,1.75,.9,paint);box(v,width+.06,.12,4.16,0,2.85,.9,chrome);
+        const amber=new THREE.MeshBasicMaterial({color:0xffaa22});for(const dx of [-.85,0,.85])box(v,.14,.08,.08,dx,2.84,-1.19,amber);
+        for(const side of [-1,1]) {
+          box(v,.035,.65,1.1,side*1.04,1.52,-2.1,trafficGlassMat);
+          for(let z=-.9;z<2.9;z+=.3)box(v,.025,1.95,.025,side*(width/2+.02),1.75,z,chrome);
         }
-        box(v,.38,.19,.06,side*.7,.95,length/2+.02,new THREE.MeshBasicMaterial({color:0xfb3533}));
-        box(v,.4,.18,.06,side*.7,.95,-length/2-.02,new THREE.MeshBasicMaterial({color:0xffefcc}));
+      } else {
+        const beltHeight=isPickup||isSUV?.72:.62,beltY=isPickup||isSUV?.92:.82;
+        box(v,width,beltHeight,length-.15,0,beltY,0,paint);
+        box(v,width*.55,.32,.08,0,beltY-.05,-length/2-.04,dark);
+        for(const side of [-1,1])box(v,.22,.14,.12,side*(width/2+.1),beltY+.38,-.65,paint);
+        if(isPickup) {
+          box(v,width*.88,.68,2.05,0,1.58,-.35,paint);box(v,width*.84,.08,1.95,0,1.3,1.55,dark);
+          frontGlass(width*.8,.68,0,1.58,-1.41,-.42);
+          for(const side of [-1,1])box(v,.035,.52,1.65,side*(width*.445),1.6,-.35,trafficGlassMat);
+        } else {
+          const cabinLen=isSUV?2.75:2.25,cabinH=isSUV?.68:.56,cabinZ=isSUV?.35:.15;
+          box(v,width*.86,cabinH,cabinLen,0,beltY+beltHeight/2+cabinH/2-.02,cabinZ,paint);
+          frontGlass(width*.78,cabinH*1.15,0,beltY+beltHeight/2+cabinH*.45,cabinZ-cabinLen/2-.025,-.52);
+          const rear=new THREE.Mesh(new THREE.PlaneGeometry(width*.76,cabinH*1.1),trafficGlassMat);rear.position.set(0,beltY+beltHeight/2+cabinH*.45,cabinZ+cabinLen/2+.025);rear.rotation.x=isSUV?.32:.62;v.add(rear);
+          for(const side of [-1,1])box(v,.04,cabinH*.78,cabinLen*.85,side*(width*.435),beltY+beltHeight/2+cabinH*.48,cabinZ,trafficGlassMat);
+        }
       }
-      scene.add(v);return {mesh:v,length,parked:false,hit:false,push:0,laneTimer:0,turn:null,turnDone:false};
+      const wheelZ=isTruck?[-2.1,1.8]:[-length*.31,length*.31];
+      for(const side of [-1,1])for(const z of wheelZ) {
+        box(v,.34,.52,.96,side*(width/2-.16),.54,z,dark);
+        const wheel=new THREE.Mesh(trafficTireGeo,dark);wheel.rotation.z=Math.PI/2;wheel.position.set(side*(width/2-.03),.43,z);wheel.castShadow=true;v.add(wheel);
+        const hub=new THREE.Mesh(trafficRimGeo,chrome);hub.rotation.z=Math.PI/2;hub.position.copy(wheel.position);v.add(hub);
+      }
+      const brakeLights=[],headMat=new THREE.MeshBasicMaterial({color:0xfff2d6});
+      for(const side of [-1,1]) {
+        brakeLights.push(box(v,.42,.16,.06,side*(width*.34),.86,length/2+.13,new THREE.MeshBasicMaterial({color:0x8a1111})));
+        box(v,.42,.16,.06,side*(width*.34),.86,-length/2-.13,headMat);
+      }
+      const plate=new THREE.Mesh(new THREE.PlaneGeometry(.48,.22),new THREE.MeshBasicMaterial({color:0xe6ecf0}));plate.position.set(0,.62,length/2+.135);v.add(plate);
+      scene.add(v);return {mesh:v,length,width,paintMaterial:paint,brakeLights,parked:false,hit:false,push:0,laneTimer:0,turn:null,turnDone:false};
     }
+    function setTrafficBrakeLights(t,braking) {for(const light of t.brakeLights||[])light.material.color.setHex(braking?0xff2a1f:0x8a1111);}
     for(let i=0;i<6;i++)traffic.push(makeTraffic(i%4));
     function placeTraffic(t,index,initial=false) {
-      t.parked=index%3===0;t.side=Math.random()<.5?-1:1;
+      setTrafficBrakeLights(t,false);t.parked=index%3===0;t.side=Math.random()<.5?-1:1;
       t.direction=index%2===0?-1:1; // -Z outbound, +Z oncoming.
       t.hit=false;t.push=0;t.turn=null;t.turnDone=false;t.plan=null;t.lastJunction=null;
       const side=t.direction===-1?1:-1;
       const x=t.parked?t.side*16.5:side*(Math.random()<.5?6:12);
       t.mesh.rotation.set(0,t.direction===1?Math.PI:0,0);t.mesh.visible=true;
       const z=initial?-140-index*75:Math.min(state.carZ-300,...traffic.filter(o=>o!==t).map(o=>o.mesh.position.z))-65-Math.random()*35;
-      t.mesh.position.set(x,0,z);t.targetX=x;t.speed=9+Math.random()*5;t.laneTimer=4+Math.random()*5;
+      t.mesh.position.set(x,0,z);t.targetX=x;t.speed=9+Math.random()*5;t.laneTimer=(4+Math.random()*5)/(1+activeLevel().aggression);
       if(t.parked)for(const c of chunks)if(c.intersection&&Math.abs(z-(c.group.position.z-30))<18)t.mesh.position.z-=28;
     }
     function updateTraffic(dt) {
@@ -786,11 +1066,13 @@
         const t=traffic[i],v=t.mesh,dir=t.direction,base=dir===1?Math.PI:0;
         if(v.position.z>state.carZ+45||Math.abs(v.position.x)>43) {placeTraffic(t,i);continue;}
         if(t.hit) {
+          setTrafficBrakeLights(t,!t.parked);
           v.position.x+=t.push*dt;t.push*=Math.exp(-2.1*dt);
           if(t.parked)v.position.x=THREE.MathUtils.damp(v.position.x,t.side*21,2.8,dt);
           continue;
         }
         if(!t.parked) {
+          setTrafficBrakeLights(t,false);
           if(t.turn) {
             const q=t.turn;q.progress=Math.min(1,q.progress+t.speed*dt/(Math.PI*6));
             const angle=q.progress*Math.PI/2;
@@ -816,7 +1098,7 @@
             else if((t.laneTimer-=dt)<=0) {
               const next=(dir===-1?1:-1)*(Math.abs(t.targetX)===6?12:6);
               if(traffic.every(o=>o===t||Math.abs(o.mesh.position.z-v.position.z)>18||Math.abs(o.mesh.position.x-next)>2.5))t.targetX=next;
-              t.laneTimer=5+Math.random()*5;target=t.targetX;
+              t.laneTimer=(5+Math.random()*5)/(1+activeLevel().aggression);target=t.targetX;
             }
             let speed=t.speed;
             for(const o of traffic)if(o!==t&&!o.hit&&Math.abs(o.mesh.position.x-v.position.x)<2.6) {
@@ -846,6 +1128,7 @@
                 } else speed=0;
               }
             }
+            const braking=!t.parked&&speed<t.speed*.75;setTrafficBrakeLights(t,braking);
             if(!t.turn)v.position.z+=dir*speed*dt;
           }
         }
@@ -859,7 +1142,7 @@
 
     // Occasional pooled pursuit: one suspect and up to three marked cruisers.
     const chasePool=Array.from({length:4},(_,i)=>{
-      const t=makeTraffic(0);t.mesh.visible=false;t.police=i>0;t.mesh.children[0].material=new THREE.MeshStandardMaterial({color:i?0xeff3f5:0x9d2937,metalness:.4,roughness:.35});
+      const t=makeTraffic(0);t.mesh.visible=false;t.police=i>0;t.paintMaterial.color.setHex(i?0xeff3f5:0x9d2937);
       if(i) {
         box(t.mesh,2.08,.35,2.4,0,1.08,0,dark);
         box(t.mesh,1.3,.1,.42,0,2.2,0,dark);
@@ -871,7 +1154,7 @@
       return t;
     });
     let chase=null,chaseTimer=14;
-    function resetChase(){chase=null;chaseTimer=14;chasePool.forEach(t=>t.mesh.visible=false);}
+    function resetChase(){chase=null;chaseTimer=20-6*activeLevel().aggression;chasePool.forEach(t=>t.mesh.visible=false);}
     function updateChase(dt) {
       if(!chase) {
         chaseTimer-=dt;if(chaseTimer>0)return;
@@ -914,7 +1197,7 @@
         }
       }
       if(q.age>16||q.direction===1&&chasePool[q.count].mesh.position.z>state.carZ+50) {
-        chasePool.forEach(t=>t.mesh.visible=false);chase=null;chaseTimer=28+Math.random()*18;
+        chasePool.forEach(t=>t.mesh.visible=false);chase=null;chaseTimer=40-18*activeLevel().aggression+Math.random()*18;
       }
     }
 
@@ -986,7 +1269,7 @@
     }
 
     // --- 7. BLIZZARD PARTICLE SYSTEM ---
-    const SNOW_COUNT = 1200;
+    const SNOW_COUNT = 400;
     const snowGeo = new THREE.BufferGeometry();
     const snowPos = new Float32Array(SNOW_COUNT * 3);
     for (let i = 0; i < SNOW_COUNT * 3; i += 3) {
@@ -1008,9 +1291,12 @@
     });
     window.addEventListener('keyup', e => (keys[e.code] = false));
 
-    const JOB_DISTANCE=2500;
+
     let state = {};
+    let frameCount=0,trafficElapsed=0;
     function resetGame() {
+      frameCount=0;trafficElapsed=0;
+      selectVehicle(selectedVehicle);
       clearAdvancedFx();
       shockFov=0;shockSide=0;camera.fov=65;camera.updateProjectionMatrix();
       resetChase();resetUtilities();
@@ -1025,34 +1311,52 @@
         running: true,
         speed: 22,
         steerVel: 0,
-        carX: 12,
+        carX: 6,
         carZ: 0,
-        rivalZ: 45,
-        rivalSpeed: 31, // Gallagher Fire closes the distance at the existing chase rate
+        jobDistance: activeLevel().distance,
+        rivalZ: -4,
+        rivalSpeed: activeLevel().rivalSpeed*.8,
         impacts: 0,
         shake: 0
       };
 
       traffic.forEach((t,i)=>{t.lastJunction=null;placeTraffic(t,i,true);});
-      car.position.set(12, 0, 0);
+      gallagher={x:-6,z:-4,speed:activeLevel().rivalSpeed*.8,targetLane:-6};
+      gallagherVan.position.set(gallagher.x,0,gallagher.z);gallagherVan.rotation.y=Math.PI;gallagherVan.visible=true;
+      trailingHaze.position.set(0,15,state.rivalZ+80);
+      car.position.set(6, 0, 0);
       car.rotation.set(0, 0, 0);
       for(const key in keys)keys[key]=false;
       document.getElementById('impacts').textContent='0';
-      document.getElementById('gap').textContent='45';
-      document.getElementById('distance').textContent=JOB_DISTANCE.toLocaleString();
+      document.getElementById('gap').textContent='4';
+      document.getElementById('lead-label').textContent='Gallagher ahead';
+      document.getElementById('distance').textContent=activeLevel().distance.toLocaleString();
+      document.getElementById('next-level-btn').style.display='none';
+      document.getElementById('brand').querySelector('small').textContent=`FDEC DISPATCH · LEVEL ${activeLevel().level}`;
       document.getElementById('overlay').classList.remove('active');
     }
 
     function showMainMenu() {
+      updateCorvetteOption();
       state.running=false;
       for(const key in keys)keys[key]=false;
+      document.getElementById('vehicle-choice').style.display='grid';
+      document.getElementById('level-choice').style.display='grid';
+      document.getElementById('next-level-btn').style.display='none';
+      document.getElementById('level-select').value=String(currentLevelIndex);
       document.getElementById('overlay-title').textContent='EMERGENCY CALLS';
-      document.getElementById('overlay-sub').textContent='FDEC dispatch: a job is 2.5 km ahead. Beat Gallagher Fire to the site. Keep your lead and avoid five impacts. Snow, traffic and city hazards will slow your response.';
+      document.getElementById('overlay-sub').textContent=`${activeLevel().title} — Job site ${(activeLevel().distance/1000).toFixed(1)} km ahead. Beat Gallagher Fire to the site. Finish first and avoid five impacts.`;
       document.getElementById('restart-btn').textContent='Start Dispatch';
       document.getElementById('menu-btn').style.display='none';
       document.getElementById('overlay').classList.add('active');
     }
     function showResult(title,message,won=false) {
+      if(won&&activeLevel().level===4&&!corvetteUnlocked){
+        unlockCorvette();if(!message.includes('Corvette'))message+=' Corvette unlocked! Select it from the main menu.';
+      }
+      document.getElementById('vehicle-choice').style.display='none';
+      document.getElementById('level-choice').style.display='none';
+      document.getElementById('next-level-btn').style.display=won&&currentLevelIndex<LEVELS.length-1?'block':'none';
       state.running=false;
       document.getElementById('overlay-title').textContent=title;
       document.getElementById('overlay-sub').textContent=message;
@@ -1062,9 +1366,13 @@
     }
     function triggerGameOver(reason) {
       if(!state.running)return;
-      const rivalWon=state.rivalZ-state.carZ<=4;
+      const rivalWon=gallagher.z<=-state.jobDistance;
       showResult(rivalWon?'GALLAGHER FIRE GOT THE JOB':'RESPONSE STOPPED',reason);
     }
+    const levelSelect=document.getElementById('level-select');
+    LEVELS.forEach((level,index)=>{const option=document.createElement('option');option.value=String(index);option.textContent=`${level.title} · ${(level.distance/1000).toFixed(1)} km`;levelSelect.appendChild(option);});
+    levelSelect.addEventListener('change',()=>{const index=Number(levelSelect.value);if(Number.isInteger(index)&&index>=0&&index<LEVELS.length){currentLevelIndex=index;showMainMenu();}});
+    document.getElementById('next-level-btn').addEventListener('click',()=>{if(currentLevelIndex<LEVELS.length-1){currentLevelIndex++;levelSelect.value=String(currentLevelIndex);enableImpactAudio();resetGame();}});
     document.getElementById('restart-btn').addEventListener('click',()=>{enableImpactAudio();resetGame();});
     document.getElementById('menu-btn').addEventListener('click',showMainMenu);
     resetGame();showMainMenu();
@@ -1075,6 +1383,7 @@
     function animate() {
       requestAnimationFrame(animate);
       const dt = Math.min(clock.getDelta(), 0.05);
+      frameCount++;
       const flashBlink=Math.floor(clock.elapsedTime*4)%2===0;
       for(const chunk of chunks)for(const equipment of chunk.obstacles)if(equipment.userData.isDumpTruck) {
         equipment.userData.hazards.forEach((lamp,index)=>lamp.material.color.setHex((index===0?flashBlink:!flashBlink)?0xffaa00:0x442200));
@@ -1086,13 +1395,16 @@
       beaconGlow.intensity=flash?9:6;
 
       if (state.running) {
+        const playerBefore=state.carZ,rivalBefore=gallagher.z;
         // Acceleration & Braking
         const accel = keys['KeyW'] || keys['ArrowUp'];
         const brake = keys['Space'] || keys['KeyS'] || keys['ArrowDown'];
         if (accel) state.speed += 28 * dt;
         else if (brake) state.speed -= 45 * dt;
         else state.speed -= 10 * dt; // Natural drag
-        state.speed = THREE.MathUtils.clamp(state.speed, 8, 52);
+        const baseMaxSpeed=52;
+        const maxSpeed=selectedVehicleType==='corvette'?baseMaxSpeed*1.2:baseMaxSpeed;
+        state.speed = THREE.MathUtils.clamp(state.speed, 8, maxSpeed);
 
         // Steering with slight drift inertia
         const steerInput = (keys['KeyA'] || keys['ArrowLeft'] ? -1 : 0) +
@@ -1107,13 +1419,9 @@
         car.rotation.y = -state.steerVel * 0.025;
         car.rotation.z = -state.steerVel * 0.015; // Body roll
 
-        // Advance Gallagher Fire along the same route (original pursuit mechanics).
-        state.rivalSpeed = Math.min(44, state.rivalSpeed + 0.35 * dt);
-        state.rivalZ -= state.rivalSpeed * dt;
-        trailingHaze.position.set(0, 15, state.rivalZ);
-
-        const gap = Math.max(0, Math.round(state.rivalZ - state.carZ));
-        if (gap <= 4) triggerGameOver('Gallagher Fire overtook you and claimed the job. Get there first on your next dispatch.');
+        updateGallagherVan(dt);
+        trailingHaze.position.set(0,15,Math.max(gallagher.z,state.carZ)+80);
+        const gap=Math.round(gallagher.z-state.carZ);
 
         // Recycle road chunks & animate collapsing buildings
         chunks.forEach(chunk => {
@@ -1149,7 +1457,15 @@
           });
         });
 
-        if(state.running) {updateUtilities(dt);updateTraffic(dt);updateChase(dt);}
+        if(state.running) {
+          updateUtilities(dt);
+          trafficElapsed+=dt;
+          if(state.running&&frameCount%2===0) {
+            const trafficDt=trafficElapsed;trafficElapsed=0;
+            updateTraffic(trafficDt);
+            if(state.running)updateChase(trafficDt);
+          }
+        }
         // Rough pavement causes continuous drag; potholes add a stronger slowdown.
         // Road damage does not count as a vehicle impact.
         let roughRoad=false, pothole=false;
@@ -1169,11 +1485,16 @@
 
         // Update HUD
         document.getElementById('impacts').textContent = state.impacts;
-        document.getElementById('gap').textContent = gap;
+        document.getElementById('gap').textContent = Math.abs(gap);
+        document.getElementById('lead-label').textContent=gap>=0?'Your lead':'Gallagher ahead';
         document.getElementById('speed').textContent = Math.round(state.speed * 3.6);
-        const remaining=Math.max(0,Math.ceil(JOB_DISTANCE+state.carZ));
+        const remaining=Math.max(0,Math.ceil(activeLevel().distance+state.carZ));
         document.getElementById('distance').textContent=remaining.toLocaleString();
-        if(state.running&&remaining===0)showResult('FDEC GOT THE JOB!','You reached the job site before Gallagher Fire. Dispatch complete.',true);
+        if(state.running) {
+          const winner=raceWinner(playerBefore,rivalBefore,state.carZ,gallagher.z,state.jobDistance);
+          if(winner==='player')showResult(currentLevelIndex===LEVELS.length-1?'CAMPAIGN COMPLETE!':`LEVEL ${activeLevel().level} COMPLETE!`,currentLevelIndex===LEVELS.length-1?'You beat Level 4 and outran Gallagher Fire! The Corvette is now UNLOCKED in the vehicle menu.':`${activeLevel().title} complete. You reached the site before Gallagher Fire.`,true);
+          else if(winner==='rival')showResult('GALLAGHER FIRE WON','The ProMaster reached the site first. Try again!');
+        }
       }
 
       updateEffects(dt);updateAdvancedFx(dt);
@@ -1194,7 +1515,7 @@
       if(Math.abs(camera.fov-newFov)>.001){camera.fov=newFov;camera.updateProjectionMatrix();}
       // Chase camera + impact/proximity shake
       state.shake = Math.max(0, state.shake - dt * 2.5);
-      const proximityShake = Math.max(0, (25 - (state.rivalZ - state.carZ)) / 25) * 0.25;
+      const proximityShake = 0;
       const totalShake = state.shake * 0.6 + proximityShake;
 
       camera.position.set(
@@ -1217,7 +1538,7 @@
     });
 
     animate();
-    window.emergencyCalls={scene,car,traffic,chunks,updateTraffic,resetGame,get state(){return state}};
+    window.emergencyCalls={scene,car,gallagherVan,traffic,chunks,vehicleModels,selectVehicle,unlockCorvette,updateTraffic,resetGame,get gallagher(){return gallagher},get state(){return state}};
   </script>
 </body>
 </html>
